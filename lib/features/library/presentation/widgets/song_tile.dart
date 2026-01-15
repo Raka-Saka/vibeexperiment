@@ -4,6 +4,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/models/song.dart';
 import '../../../../shared/widgets/song_dialogs.dart';
+import '../../../../services/play_statistics_service.dart';
 import '../../../player/data/player_provider.dart';
 import '../../../youtube/presentation/youtube_upload_screen.dart';
 import '../../data/media_scanner.dart';
@@ -63,6 +64,9 @@ class SongTile extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            // Play count indicator
+            _buildPlayCountBadge(isCurrentSong),
+            const SizedBox(width: 8),
             Text(
               song.durationFormatted,
               style: TextStyle(
@@ -157,6 +161,42 @@ class SongTile extends ConsumerWidget {
           },
         ),
         onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildPlayCountBadge(bool isCurrentSong) {
+    final stats = playStatisticsService.getSongStats(song.id);
+    if (stats == null || stats.playCount == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isCurrentSong
+            ? AppTheme.primaryColor.withValues(alpha: 0.2)
+            : AppTheme.darkCard,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.play_arrow_rounded,
+            size: 10,
+            color: isCurrentSong ? AppTheme.primaryColor : AppTheme.textMuted,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            '${stats.playCount}',
+            style: TextStyle(
+              color: isCurrentSong ? AppTheme.primaryColor : AppTheme.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

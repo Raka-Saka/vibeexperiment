@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/models/song.dart';
 import '../../../player/data/player_provider.dart';
+import '../../../statistics/presentation/statistics_screen.dart';
 import '../../../tag_editor/data/tag_editor_service.dart';
 import '../../../tag_editor/presentation/screens/batch_find_replace_screen.dart';
 import '../../data/media_scanner.dart';
@@ -191,6 +192,49 @@ class SongsScreen extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                // Statistics button
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const StatisticsScreen(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        colors: [
+                          AppTheme.primaryColor.withValues(alpha: 0.2),
+                          AppTheme.secondaryColor.withValues(alpha: 0.2),
+                        ],
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.bar_chart_rounded,
+                          size: 14,
+                          color: AppTheme.primaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Statistics',
+                          style: TextStyle(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 // Remove URLs button
                 GestureDetector(
                   onTap: () => _showRemoveUrlsDialog(context, ref, songs),
