@@ -69,10 +69,34 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
 
   Future<void> _init() async {
     await equalizerStorageService.init();
+
+    // Load saved global EQ state
+    final savedState = equalizerStorageService.globalState;
+
+    // Find the preset by name if saved
+    EqualizerPreset? preset;
+    if (savedState.presetName != null) {
+      preset = EqualizerPresets.all.cast<EqualizerPreset?>().firstWhere(
+        (p) => p?.name == savedState.presetName,
+        orElse: () => null,
+      );
+    }
+
     state = state.copyWith(
+      isEnabled: savedState.isEnabled,
+      customBands: savedState.bands,
+      bassBoost: savedState.bassBoost,
+      virtualizer: savedState.virtualizer,
+      currentPreset: preset ?? EqualizerPresets.flat,
       customPresets: equalizerStorageService.customPresets,
       perSongEnabled: equalizerStorageService.perSongEnabled,
     );
+
+    // Apply saved settings to native equalizer if enabled
+    if (savedState.isEnabled) {
+      await equalizerService.setEnabled(true);
+      await _applyAllSettings();
+    }
 
     // Listen to song changes for per-song EQ
     audioHandler.currentSongStream.listen((song) {
@@ -112,6 +136,9 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
       // Apply current settings when enabling
       await _applyAllSettings();
     }
+
+    // Persist the enabled state
+    await _saveGlobalState();
   }
 
   Future<void> setPreset(EqualizerPreset preset) async {
@@ -122,6 +149,7 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
       virtualizer: preset.virtualizer,
     );
     await _applyAllSettings();
+    await _saveGlobalState();
   }
 
   Future<void> setBand(int index, double value) async {
@@ -134,6 +162,11 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
     }
   }
 
+  /// Called when band slider is released to persist settings
+  Future<void> onBandChangeEnd() async {
+    await _saveGlobalState();
+  }
+
   Future<void> setBassBoost(double value) async {
     state = state.copyWith(bassBoost: value.clamp(0.0, 1.0));
 
@@ -142,12 +175,22 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
     }
   }
 
+  /// Called when bass boost slider is released to persist settings
+  Future<void> onBassBoostChangeEnd() async {
+    await _saveGlobalState();
+  }
+
   Future<void> setVirtualizer(double value) async {
     state = state.copyWith(virtualizer: value.clamp(0.0, 1.0));
 
     if (state.isEnabled) {
       await equalizerService.setVirtualizer(value);
     }
+  }
+
+  /// Called when virtualizer slider is released to persist settings
+  Future<void> onVirtualizerChangeEnd() async {
+    await _saveGlobalState();
   }
 
   Future<void> toggleSpatialAudio() async {
@@ -177,6 +220,17 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
     } else {
       await equalizerService.setVirtualizer(state.virtualizer);
     }
+  }
+
+  /// Save current EQ state to persist across app restarts
+  Future<void> _saveGlobalState() async {
+    await equalizerStorageService.saveGlobalState(
+      isEnabled: state.isEnabled,
+      bands: state.customBands,
+      bassBoost: state.bassBoost,
+      virtualizer: state.virtualizer,
+      presetName: state.currentPreset.name,
+    );
   }
 
   // Custom preset methods
@@ -749,6 +803,9 @@ class EqualizerScreen extends ConsumerWidget {
                         ref.read(equalizerProvider.notifier).setBand(index, newValue);
                       }
                     : null,
+                onChangeEnd: isEnabled
+                    ? (_) => ref.read(equalizerProvider.notifier).onBandChangeEnd()
+                    : null,
               ),
             ),
           ),
@@ -781,6 +838,7 @@ class EqualizerScreen extends ConsumerWidget {
           eqState.bassBoost,
           eqState.isEnabled,
           (value) => ref.read(equalizerProvider.notifier).setBassBoost(value),
+          () => ref.read(equalizerProvider.notifier).onBassBoostChangeEnd(),
         ),
         const SizedBox(height: 16),
         // Virtualizer
@@ -791,6 +849,7 @@ class EqualizerScreen extends ConsumerWidget {
           eqState.virtualizer,
           eqState.isEnabled,
           (value) => ref.read(equalizerProvider.notifier).setVirtualizer(value),
+          () => ref.read(equalizerProvider.notifier).onVirtualizerChangeEnd(),
         ),
       ],
     );
@@ -803,6 +862,7 @@ class EqualizerScreen extends ConsumerWidget {
     double value,
     bool isEnabled,
     ValueChanged<double> onChanged,
+    VoidCallback? onChangeEnd,
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -857,6 +917,9 @@ class EqualizerScreen extends ConsumerWidget {
                   child: Slider(
                     value: value,
                     onChanged: isEnabled ? onChanged : null,
+                    onChangeEnd: isEnabled && onChangeEnd != null
+                        ? (_) => onChangeEnd()
+                        : null,
                   ),
                 ),
               ],

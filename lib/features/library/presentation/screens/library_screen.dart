@@ -9,6 +9,7 @@ import 'songs_screen.dart';
 import 'albums_screen.dart';
 import 'artists_screen.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/song_tile.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -246,39 +247,12 @@ class SongSearchDelegate extends SearchDelegate<String> {
         }
 
         return ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           itemCount: songs.length,
           itemBuilder: (context, index) {
             final song = songs[index];
-            return ListTile(
-              leading: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  gradient: LinearGradient(
-                    colors: [
-                      AppTheme.primaryColor.withValues(alpha:0.3),
-                      AppTheme.secondaryColor.withValues(alpha:0.3),
-                    ],
-                  ),
-                ),
-                child: const Icon(
-                  Icons.music_note_rounded,
-                  color: AppTheme.textPrimary,
-                ),
-              ),
-              title: Text(
-                song.title,
-                style: const TextStyle(color: AppTheme.textPrimary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                song.artistDisplay,
-                style: const TextStyle(color: AppTheme.textMuted),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+            return SongTile(
+              song: song,
               onTap: () async {
                 final playerNotifier = ref.read(playerProvider.notifier);
                 await playerNotifier.playSong(song, songs);

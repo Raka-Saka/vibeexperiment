@@ -83,6 +83,39 @@ class SongEQSettings {
   );
 }
 
+/// Global EQ state that persists across app restarts
+class GlobalEQState {
+  final bool isEnabled;
+  final List<double> bands;
+  final double bassBoost;
+  final double virtualizer;
+  final String? presetName;
+
+  GlobalEQState({
+    this.isEnabled = false,
+    List<double>? bands,
+    this.bassBoost = 0.0,
+    this.virtualizer = 0.0,
+    this.presetName,
+  }) : bands = bands ?? List.filled(10, 0.0);
+
+  Map<String, dynamic> toJson() => {
+    'isEnabled': isEnabled,
+    'bands': bands,
+    'bassBoost': bassBoost,
+    'virtualizer': virtualizer,
+    'presetName': presetName,
+  };
+
+  factory GlobalEQState.fromJson(Map<String, dynamic> json) => GlobalEQState(
+    isEnabled: json['isEnabled'] as bool? ?? false,
+    bands: (json['bands'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+    bassBoost: (json['bassBoost'] as num?)?.toDouble() ?? 0.0,
+    virtualizer: (json['virtualizer'] as num?)?.toDouble() ?? 0.0,
+    presetName: json['presetName'] as String?,
+  );
+}
+
 /// Service for storing and retrieving custom EQ presets and per-song settings
 class EqualizerStorageService {
   static const String _boxName = 'equalizer_storage';
@@ -91,8 +124,10 @@ class EqualizerStorageService {
   final Map<String, CustomPreset> _customPresets = {};
   final Map<String, SongEQSettings> _songSettings = {};
   bool _perSongEnabled = false;
+  GlobalEQState _globalState = GlobalEQState();
 
   bool get perSongEnabled => _perSongEnabled;
+  GlobalEQState get globalState => _globalState;
   List<CustomPreset> get customPresets => _customPresets.values.toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
@@ -130,7 +165,17 @@ class EqualizerStorageService {
     // Load per-song enabled setting
     _perSongEnabled = _box?.get('perSongEnabled') as bool? ?? false;
 
-    Log.eq.d('EQStorage: Loaded ${_customPresets.length} custom presets, ${_songSettings.length} song settings');
+    // Load global EQ state
+    final globalData = _box?.get('globalEQState') as Map<dynamic, dynamic>?;
+    if (globalData != null) {
+      try {
+        _globalState = GlobalEQState.fromJson(Map<String, dynamic>.from(globalData));
+      } catch (e) {
+        Log.eq.d('EQStorage: Error loading global state: $e');
+      }
+    }
+
+    Log.eq.d('EQStorage: Loaded ${_customPresets.length} custom presets, ${_songSettings.length} song settings, EQ enabled: ${_globalState.isEnabled}');
   }
 
   Future<void> _savePresets() async {
@@ -147,6 +192,25 @@ class EqualizerStorageService {
       data[entry.key] = entry.value.toJson();
     }
     await _box?.put('songSettings', data);
+  }
+
+  // Global EQ state methods
+
+  Future<void> saveGlobalState({
+    required bool isEnabled,
+    required List<double> bands,
+    required double bassBoost,
+    required double virtualizer,
+    String? presetName,
+  }) async {
+    _globalState = GlobalEQState(
+      isEnabled: isEnabled,
+      bands: List.from(bands),
+      bassBoost: bassBoost,
+      virtualizer: virtualizer,
+      presetName: presetName,
+    );
+    await _box?.put('globalEQState', _globalState.toJson());
   }
 
   // Custom preset methods

@@ -5,6 +5,8 @@ import '../../../services/play_statistics_service.dart';
 import '../../../services/smart_playlist_service.dart';
 import '../../../shared/models/song.dart';
 import '../../library/data/media_scanner.dart';
+import '../../library/presentation/widgets/song_tile.dart';
+import '../../player/data/player_provider.dart';
 
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
@@ -360,7 +362,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 }
 
 /// Detail screen for a smart playlist
-class SmartPlaylistDetailScreen extends StatelessWidget {
+class SmartPlaylistDetailScreen extends ConsumerWidget {
   final SmartPlaylist playlist;
   final List<Song> songs;
 
@@ -371,7 +373,7 @@ class SmartPlaylistDetailScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
         title: Text(playlist.name),
@@ -413,95 +415,16 @@ class SmartPlaylistDetailScreen extends StatelessWidget {
                 itemCount: songs.length,
                 itemBuilder: (context, index) {
                   final song = songs[index];
-                  final stats = playStatisticsService.getSongStats(song.id);
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.darkCard,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ListTile(
-                      leading: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: AppTheme.darkSurface,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${index + 1}',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                      title: Text(
-                        song.title,
-                        style: const TextStyle(
-                          color: AppTheme.textPrimary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        song.artist ?? 'Unknown Artist',
-                        style: TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 12,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: stats != null
-                          ? Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${stats.playCount} plays',
-                                  style: TextStyle(
-                                    color: AppTheme.textMuted,
-                                    fontSize: 11,
-                                  ),
-                                ),
-                                if (stats.lastPlayedAt != null)
-                                  Text(
-                                    _formatLastPlayed(stats.lastPlayedAt!),
-                                    style: TextStyle(
-                                      color: AppTheme.textMuted.withOpacity(0.7),
-                                      fontSize: 10,
-                                    ),
-                                  ),
-                              ],
-                            )
-                          : null,
-                    ),
+                  return SongTile(
+                    song: song,
+                    onTap: () async {
+                      final playerNotifier = ref.read(playerProvider.notifier);
+                      await playerNotifier.playSong(song, songs);
+                    },
                   );
                 },
               ),
       ),
     );
-  }
-
-  String _formatLastPlayed(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
-    if (diff.inDays == 0) {
-      return 'Today';
-    } else if (diff.inDays == 1) {
-      return 'Yesterday';
-    } else if (diff.inDays < 7) {
-      return '${diff.inDays} days ago';
-    } else if (diff.inDays < 30) {
-      return '${(diff.inDays / 7).floor()} weeks ago';
-    } else {
-      return '${(diff.inDays / 30).floor()} months ago';
-    }
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../shared/models/song.dart';
+import '../../../../services/play_statistics_service.dart';
 import '../../data/duplicate_finder.dart';
 import '../../data/file_deletion_service.dart';
 import '../../data/media_scanner.dart';
@@ -138,6 +139,29 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
     final lastSlash = path.lastIndexOf('/');
     if (lastSlash == -1) return '';
     return path.substring(0, lastSlash);
+  }
+
+  Widget _buildPlayCountBadge(Song song) {
+    final stats = playStatisticsService.getSongStats(song.id);
+    if (stats == null || stats.playCount == 0) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      margin: const EdgeInsets.only(left: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '▶ ${stats.playCount}',
+        style: TextStyle(
+          color: AppTheme.primaryColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmAndDelete() async {
@@ -497,17 +521,25 @@ class _DuplicatesScreenState extends ConsumerState<DuplicatesScreen> {
                             ],
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            song.artist ?? 'Unknown Artist',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textMuted,
-                              decoration: isSelected
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  song.artist ?? 'Unknown Artist',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.textMuted,
+                                    decoration: isSelected
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              // Play count badge
+                              _buildPlayCountBadge(song),
+                            ],
                           ),
                           const SizedBox(height: 2),
                           Text(
