@@ -1195,18 +1195,19 @@ class EQCurvePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (bands.isEmpty) return;
 
-    final padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 12);
-    final graphWidth = size.width - padding.horizontal;
-    final graphHeight = size.height - padding.vertical;
-    final graphLeft = padding.left;
-    final graphTop = padding.top;
+    const double padH = 16.0;
+    const double padV = 12.0;
+    final double graphWidth = size.width - (padH * 2);
+    final double graphHeight = size.height - (padV * 2);
+    final double graphLeft = padH;
+    final double graphTop = padV;
 
     // Draw grid lines
     final gridPaint = Paint()
-      ..color = AppTheme.textMuted.withValues(alpha: 0.15)
+      ..color = Colors.grey.withOpacity(0.15)
       ..strokeWidth = 1;
 
-    // Horizontal grid lines (dB levels: +10, +5, 0, -5, -10)
+    // Horizontal grid lines
     for (int i = 0; i <= 4; i++) {
       final y = graphTop + (graphHeight * i / 4);
       canvas.drawLine(
@@ -1216,10 +1217,10 @@ class EQCurvePainter extends CustomPainter {
       );
     }
 
-    // Draw center line (0 dB) slightly brighter
-    final centerY = graphTop + graphHeight / 2;
+    // Center line (0 dB)
+    final double centerY = graphTop + graphHeight / 2;
     final centerPaint = Paint()
-      ..color = AppTheme.textMuted.withValues(alpha: 0.3)
+      ..color = Colors.grey.withOpacity(0.3)
       ..strokeWidth = 1;
     canvas.drawLine(
       Offset(graphLeft, centerY),
@@ -1227,115 +1228,52 @@ class EQCurvePainter extends CustomPainter {
       centerPaint,
     );
 
-    // Calculate points for the curve
+    // Calculate points
     final points = <Offset>[];
-    final bandWidth = graphWidth / (bands.length - 1);
+    final double bandWidth = graphWidth / (bands.length - 1);
 
     for (int i = 0; i < bands.length; i++) {
-      final x = graphLeft + (i * bandWidth);
-      // Map -10 to +10 dB to the graph height (inverted: +10 at top, -10 at bottom)
-      final normalizedValue = (10 - bands[i]) / 20; // 0 at +10dB, 1 at -10dB
-      final y = graphTop + (normalizedValue * graphHeight);
+      final double x = graphLeft + (i * bandWidth);
+      final double normalizedValue = (10 - bands[i]) / 20;
+      final double y = graphTop + (normalizedValue * graphHeight);
       points.add(Offset(x, y.clamp(graphTop, graphTop + graphHeight)));
     }
 
-    // Create smooth curve path using Catmull-Rom spline
+    // Draw curve with simple lines
     final curvePath = Path();
     if (points.isNotEmpty) {
       curvePath.moveTo(points.first.dx, points.first.dy);
-
-      for (int i = 0; i < points.length - 1; i++) {
-        final p0 = i > 0 ? points[i - 1] : points[i];
-        final p1 = points[i];
-        final p2 = points[i + 1];
-        final p3 = i < points.length - 2 ? points[i + 2] : p2;
-
-        // Catmull-Rom to Bezier conversion
-        final cp1x = p1.dx + (p2.dx - p0.dx) / 6;
-        final cp1y = p1.dy + (p2.dy - p0.dy) / 6;
-        final cp2x = p2.dx - (p3.dx - p1.dx) / 6;
-        final cp2y = p2.dy - (p3.dy - p1.dy) / 6;
-
-        curvePath.cubicTo(cp1x, cp1y, cp2x, cp2y, p2.dx, p2.dy);
+      for (int i = 1; i < points.length; i++) {
+        curvePath.lineTo(points[i].dx, points[i].dy);
       }
     }
 
-    // Draw filled area under the curve
+    // Fill under curve
     final fillPath = Path.from(curvePath);
     fillPath.lineTo(graphLeft + graphWidth, centerY);
     fillPath.lineTo(graphLeft, centerY);
     fillPath.close();
 
-    final fillGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: isEnabled
-          ? [
-              primaryColor.withValues(alpha: 0.3),
-              secondaryColor.withValues(alpha: 0.1),
-            ]
-          : [
-              AppTheme.textMuted.withValues(alpha: 0.15),
-              AppTheme.textMuted.withValues(alpha: 0.05),
-            ],
-    );
-
     final fillPaint = Paint()
-      ..shader = fillGradient.createShader(
-        Rect.fromLTWH(0, graphTop, size.width, graphHeight),
-      );
-
+      ..color = (isEnabled ? primaryColor : Colors.grey).withOpacity(0.2);
     canvas.drawPath(fillPath, fillPaint);
 
-    // Draw the curve line
+    // Draw line
     final curvePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    if (isEnabled) {
-      curvePaint.shader = LinearGradient(
-        colors: [primaryColor, secondaryColor],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    } else {
-      curvePaint.color = AppTheme.textMuted.withValues(alpha: 0.5);
-    }
-
+      ..color = isEnabled ? primaryColor : Colors.grey.withOpacity(0.5);
     canvas.drawPath(curvePath, curvePaint);
 
-    // Draw points at each band
+    // Draw points
     final pointPaint = Paint()
-      ..color = isEnabled ? primaryColor : AppTheme.textMuted
+      ..color = isEnabled ? primaryColor : Colors.grey
       ..style = PaintingStyle.fill;
 
     for (final point in points) {
       canvas.drawCircle(point, 3, pointPaint);
     }
-
-    // Draw dB labels
-    final textStyle = TextStyle(
-      color: AppTheme.textMuted.withValues(alpha: 0.6),
-      fontSize: 8,
-    );
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
-
-    // +10 dB label
-    textPainter.text = TextSpan(text: '+10', style: textStyle);
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(2, graphTop - 2));
-
-    // 0 dB label
-    textPainter.text = TextSpan(text: '0', style: textStyle);
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(4, centerY - 4));
-
-    // -10 dB label
-    textPainter.text = TextSpan(text: '-10', style: textStyle);
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(2, graphTop + graphHeight - 10));
   }
 
   @override
