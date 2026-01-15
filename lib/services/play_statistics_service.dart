@@ -125,6 +125,7 @@ class PlayStatisticsService {
   static const int _maxHistoryEntries = 1000; // Keep last 1000 plays
 
   Box? _box;
+  bool _isInitialized = false;
   final Map<int, SongStatistics> _songStats = {};
   final List<ListeningHistoryEntry> _history = [];
   final Map<String, DailyStats> _dailyStats = {};
@@ -134,11 +135,25 @@ class PlayStatisticsService {
   DateTime? _currentPlayStartTime;
   int _currentListenedMs = 0;
 
+  /// Check if the service is initialized
+  bool get isInitialized => _isInitialized;
+
+  /// Get stats count (for debugging)
+  int get statsCount => _songStats.length;
+
   Future<void> init() async {
+    if (_isInitialized) {
+      Log.audio.d('PlayStats: Already initialized, skipping');
+      return;
+    }
+
+    Log.audio.d('PlayStats: Initializing...');
     _box = await Hive.openBox(_boxName);
+    Log.audio.d('PlayStats: Hive box opened');
 
     // Load song statistics
     final statsData = _box?.get('songStats') as Map<dynamic, dynamic>?;
+    Log.audio.d('PlayStats: Raw stats data: ${statsData?.length ?? 0} entries');
     if (statsData != null) {
       for (final entry in statsData.entries) {
         try {
@@ -181,29 +196,35 @@ class PlayStatisticsService {
       }
     }
 
-    Log.audio.d('PlayStats: Loaded ${_songStats.length} song stats, ${_history.length} history entries');
+    _isInitialized = true;
+    Log.audio.d('PlayStats: Initialized! Loaded ${_songStats.length} song stats, ${_history.length} history entries');
   }
 
   Future<void> _saveAll() async {
+    if (_box == null) return;
+
     // Save song stats
     final statsData = <String, Map<String, dynamic>>{};
     for (final entry in _songStats.entries) {
       statsData[entry.key.toString()] = entry.value.toJson();
     }
-    await _box?.put('songStats', statsData);
+    await _box!.put('songStats', statsData);
 
     // Save history (trim if too large)
     if (_history.length > _maxHistoryEntries) {
       _history.removeRange(0, _history.length - _maxHistoryEntries);
     }
-    await _box?.put('history', _history.map((e) => e.toJson()).toList());
+    await _box!.put('history', _history.map((e) => e.toJson()).toList());
 
     // Save daily stats
     final dailyData = <String, Map<String, dynamic>>{};
     for (final entry in _dailyStats.entries) {
       dailyData[entry.key] = entry.value.toJson();
     }
-    await _box?.put('dailyStats', dailyData);
+    await _box!.put('dailyStats', dailyData);
+
+    // Force immediate write to disk
+    await _box!.flush();
   }
 
   // ============ Playback Tracking ============

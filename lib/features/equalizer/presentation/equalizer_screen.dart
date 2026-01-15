@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../services/equalizer_service.dart';
 import '../../../services/equalizer_storage_service.dart';
 import '../../../services/audio_handler.dart';
+import '../../../services/log_service.dart';
 import '../data/equalizer_presets.dart';
 
 // Equalizer state - Software 10-band EQ
@@ -220,6 +221,7 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
 
   /// Save current EQ state to persist across app restarts
   Future<void> _saveGlobalState() async {
+    Log.eq.d('EQNotifier: Saving global state - enabled: ${state.isEnabled}, preset: ${state.currentPreset.name}');
     await equalizerStorageService.saveGlobalState(
       isEnabled: state.isEnabled,
       bands: state.customBands,
@@ -227,6 +229,7 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
       virtualizer: state.virtualizer,
       presetName: state.currentPreset.name,
     );
+    Log.eq.d('EQNotifier: Global state save completed');
   }
 
   // Custom preset methods

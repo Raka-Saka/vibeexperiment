@@ -299,13 +299,22 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     await visualizerService.setAudioSessionId(sessionId);
 
     // Restore saved EQ settings if EQ was enabled
+    Log.eq.d('AudioHandler: Checking EQ storage state - initialized: ${equalizerStorageService.isInitialized}');
     final savedState = equalizerStorageService.globalState;
+    Log.eq.d('AudioHandler: Saved EQ state - enabled: ${savedState.isEnabled}, bands: ${savedState.bands}');
     if (savedState.isEnabled) {
-      Log.eq.d('AudioHandler: Restoring saved EQ settings (enabled: true)');
-      await equalizerService.setEnabled(true);
-      await equalizerService.setAllBands(savedState.bands);
-      await equalizerService.setBassBoost(savedState.bassBoost);
-      await equalizerService.setVirtualizer(savedState.virtualizer);
+      Log.eq.d('AudioHandler: Restoring saved EQ settings...');
+      final enableResult = await equalizerService.setEnabled(true);
+      Log.eq.d('AudioHandler: setEnabled(true) result: $enableResult');
+      final bandsResult = await equalizerService.setAllBands(savedState.bands);
+      Log.eq.d('AudioHandler: setAllBands result: $bandsResult');
+      final bassResult = await equalizerService.setBassBoost(savedState.bassBoost);
+      Log.eq.d('AudioHandler: setBassBoost(${savedState.bassBoost}) result: $bassResult');
+      final virtResult = await equalizerService.setVirtualizer(savedState.virtualizer);
+      Log.eq.d('AudioHandler: setVirtualizer(${savedState.virtualizer}) result: $virtResult');
+      Log.eq.d('AudioHandler: EQ restoration complete');
+    } else {
+      Log.eq.d('AudioHandler: EQ was not enabled in saved state, skipping restoration');
     }
   }
 

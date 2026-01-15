@@ -21,11 +21,16 @@ void main() async {
 
   // Initialize play statistics service (for play counts on song tiles)
   await playStatisticsService.init();
-  Log.storage.d('Play statistics initialized');
+  Log.storage.d('Play statistics initialized: ${playStatisticsService.statsCount} songs tracked');
 
   // Initialize equalizer storage (for restoring EQ settings)
   await equalizerStorageService.init();
-  Log.eq.d('Equalizer storage initialized, EQ enabled: ${equalizerStorageService.globalState.isEnabled}');
+  final savedEQ = equalizerStorageService.globalState;
+  Log.eq.d('Equalizer storage initialized:');
+  Log.eq.d('  - EQ enabled: ${savedEQ.isEnabled}');
+  Log.eq.d('  - Preset: ${savedEQ.presetName}');
+  Log.eq.d('  - Bands: ${savedEQ.bands}');
+  Log.eq.d('  - Bass: ${savedEQ.bassBoost}, Virt: ${savedEQ.virtualizer}');
 
   // Initialize audio service for background playback
   await initAudioService();

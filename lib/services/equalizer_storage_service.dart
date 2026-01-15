@@ -131,8 +131,18 @@ class EqualizerStorageService {
   List<CustomPreset> get customPresets => _customPresets.values.toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+  bool _isInitialized = false;
+  bool get isInitialized => _isInitialized;
+
   Future<void> init() async {
+    if (_isInitialized) {
+      Log.eq.d('EQStorage: Already initialized, skipping');
+      return;
+    }
+
+    Log.eq.d('EQStorage: Initializing...');
     _box = await Hive.openBox(_boxName);
+    Log.eq.d('EQStorage: Hive box opened');
 
     // Load custom presets
     final presetsData = _box?.get('customPresets') as Map<dynamic, dynamic>?;
@@ -167,15 +177,20 @@ class EqualizerStorageService {
 
     // Load global EQ state
     final globalData = _box?.get('globalEQState') as Map<dynamic, dynamic>?;
+    Log.eq.d('EQStorage: Raw global state data: $globalData');
     if (globalData != null) {
       try {
         _globalState = GlobalEQState.fromJson(Map<String, dynamic>.from(globalData));
+        Log.eq.d('EQStorage: Loaded global state - enabled: ${_globalState.isEnabled}, bands: ${_globalState.bands}, preset: ${_globalState.presetName}');
       } catch (e) {
         Log.eq.d('EQStorage: Error loading global state: $e');
       }
+    } else {
+      Log.eq.d('EQStorage: No saved global state found');
     }
 
-    Log.eq.d('EQStorage: Loaded ${_customPresets.length} custom presets, ${_songSettings.length} song settings, EQ enabled: ${_globalState.isEnabled}');
+    _isInitialized = true;
+    Log.eq.d('EQStorage: Initialized! ${_customPresets.length} custom presets, ${_songSettings.length} song settings, EQ enabled: ${_globalState.isEnabled}');
   }
 
   Future<void> _savePresets() async {
@@ -203,6 +218,9 @@ class EqualizerStorageService {
     required double virtualizer,
     String? presetName,
   }) async {
+    Log.eq.d('EQStorage: Saving global state - enabled: $isEnabled, preset: $presetName');
+    Log.eq.d('EQStorage: Bands: $bands, bass: $bassBoost, virt: $virtualizer');
+
     _globalState = GlobalEQState(
       isEnabled: isEnabled,
       bands: List.from(bands),
@@ -210,7 +228,17 @@ class EqualizerStorageService {
       virtualizer: virtualizer,
       presetName: presetName,
     );
-    await _box?.put('globalEQState', _globalState.toJson());
+
+    if (_box == null) {
+      Log.eq.d('EQStorage: ERROR - Box is null! Cannot save.');
+      return;
+    }
+
+    final json = _globalState.toJson();
+    Log.eq.d('EQStorage: Saving JSON: $json');
+    await _box!.put('globalEQState', json);
+    await _box!.flush(); // Force immediate write to disk
+    Log.eq.d('EQStorage: Global state saved and flushed to disk');
   }
 
   // Custom preset methods
