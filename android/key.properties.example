@@ -1,0 +1,24 @@
+# ============================================================================
+# RELEASE SIGNING CONFIGURATION TEMPLATE
+# ============================================================================
+# Copy this file to 'key.properties' and fill in your values.
+# The key.properties file is gitignored and will not be committed.
+#
+# To create a keystore:
+#   keytool -genkey -v -keystore vibeplay-release.keystore -alias vibeplay \
+#           -keyalg RSA -keysize 2048 -validity 10000
+#
+# Store the keystore file securely - you'll need it for all future updates!
+# ============================================================================
+
+# Path to your keystore file (relative to android/ folder or absolute path)
+storeFile=vibeplay-release.keystore
+
+# Keystore password
+storePassword=YOUR_KEYSTORE_PASSWORD
+
+# Key alias (the -alias value you used when creating the keystore)
+keyAlias=vibeplay
+
+# Key password (often same as storePassword)
+keyPassword=YOUR_KEY_PASSWORD

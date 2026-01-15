@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VibePlay</string>
+    <string name="widget_small_description">Quick playback controls</string>
+    <string name="widget_medium_description">Music player with album art and controls</string>
+    <string name="widget_play_pause">Play or Pause</string>
+    <string name="widget_next">Next track</string>
+    <string name="widget_prev">Previous track</string>
+    <string name="widget_album_art">Album artwork</string>
+</resources>

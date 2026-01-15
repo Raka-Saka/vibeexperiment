@@ -1,0 +1,125 @@
+{
+  "@@locale": "en",
+  "appTitle": "VibePlay",
+  "@appTitle": {
+    "description": "The app name"
+  },
+
+  "nowPlaying": "Now Playing",
+  "queue": "Queue",
+  "library": "Library",
+  "settings": "Settings",
+  "search": "Search",
+
+  "songs": "Songs",
+  "albums": "Albums",
+  "artists": "Artists",
+  "playlists": "Playlists",
+  "folders": "Folders",
+
+  "play": "Play",
+  "pause": "Pause",
+  "stop": "Stop",
+  "next": "Next",
+  "previous": "Previous",
+  "shuffle": "Shuffle",
+  "repeat": "Repeat",
+  "repeatOne": "Repeat One",
+  "repeatAll": "Repeat All",
+  "repeatOff": "Repeat Off",
+
+  "equalizer": "Equalizer",
+  "eqBand60Hz": "60 Hz",
+  "eqBand230Hz": "230 Hz",
+  "eqBand910Hz": "910 Hz",
+  "eqBand3600Hz": "3.6 kHz",
+  "eqBand14000Hz": "14 kHz",
+  "bass": "Bass",
+  "midrange": "Midrange",
+  "treble": "Treble",
+
+  "visualizer": "Visualizer",
+  "visualizerResonance": "Resonance",
+  "visualizerRipples": "Ripples",
+  "visualizerHarmonograph": "Harmonograph",
+  "visualizerCelestialHalos": "Celestial Halos",
+  "visualizerAurora": "Aurora",
+
+  "audioEffects": "Audio Effects",
+  "reverb": "Reverb",
+  "reverbOff": "Off",
+  "reverbSmallRoom": "Small Room",
+  "reverbMediumRoom": "Medium Room",
+  "reverbLargeRoom": "Large Room",
+  "reverbMediumHall": "Medium Hall",
+  "reverbLargeHall": "Large Hall",
+  "reverbPlate": "Plate",
+  "reverbMix": "Reverb Mix",
+  "reverbDecay": "Decay",
+
+  "playbackSpeed": "Playback Speed",
+  "pitch": "Pitch",
+  "semitones": "semitones",
+
+  "crossfade": "Crossfade",
+  "crossfadeOff": "Off",
+  "crossfadeFixed": "Fixed",
+  "crossfadeSmart": "Smart",
+  "crossfadeDuration": "Crossfade Duration",
+  "seconds": "seconds",
+
+  "gaplessPlayback": "Gapless Playback",
+  "volumeNormalization": "Volume Normalization",
+  "normalizationOff": "Off",
+  "normalizationTrack": "Track",
+  "normalizationAlbum": "Album",
+  "targetLoudness": "Target Loudness",
+  "preventClipping": "Prevent Clipping",
+
+  "sortBy": "Sort By",
+  "sortByTitle": "Title",
+  "sortByArtist": "Artist",
+  "sortByAlbum": "Album",
+  "sortByDateAdded": "Date Added",
+  "sortByDuration": "Duration",
+  "sortAscending": "Ascending",
+  "sortDescending": "Descending",
+
+  "audioQuality": "Audio Quality",
+  "qualityLow": "Low (saves battery)",
+  "qualityMedium": "Medium",
+  "qualityHigh": "High Quality",
+
+  "theme": "Theme",
+  "dynamicColors": "Dynamic Colors",
+
+  "about": "About",
+  "version": "Version",
+  "licenses": "Licenses",
+
+  "noSongsFound": "No songs found",
+  "scanningLibrary": "Scanning library...",
+  "refreshLibrary": "Refresh Library",
+
+  "addToQueue": "Add to Queue",
+  "addToPlaylist": "Add to Playlist",
+  "playNext": "Play Next",
+  "goToArtist": "Go to Artist",
+  "goToAlbum": "Go to Album",
+  "delete": "Delete",
+  "share": "Share",
+
+  "unknownArtist": "Unknown Artist",
+  "unknownAlbum": "Unknown Album",
+
+  "hours": "hours",
+  "minutes": "minutes",
+  "trackCount": "{count} tracks",
+  "@trackCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
+}
