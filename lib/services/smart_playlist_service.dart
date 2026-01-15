@@ -1,6 +1,5 @@
 import '../shared/models/song.dart';
 import 'play_statistics_service.dart';
-import 'log_service.dart';
 
 /// Types of smart playlists
 enum SmartPlaylistType {
@@ -144,15 +143,11 @@ class SmartPlaylistService {
         .toList();
   }
 
-  /// Recently added songs (by dateAdded in song metadata)
+  /// Recently added songs (by song ID - higher ID = more recently added)
   List<int> _getRecentlyAdded(List<Song> allSongs, int limit) {
-    // Sort by dateAdded descending
+    // Sort by ID descending (higher ID = more recently added to library)
     final sorted = List<Song>.from(allSongs)
-      ..sort((a, b) {
-        final aDate = a.dateAdded ?? 0;
-        final bDate = b.dateAdded ?? 0;
-        return bDate.compareTo(aDate);
-      });
+      ..sort((a, b) => b.id.compareTo(a.id));
 
     return sorted.take(limit).map((s) => s.id).toList();
   }
