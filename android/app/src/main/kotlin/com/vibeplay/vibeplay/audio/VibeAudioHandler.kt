@@ -276,6 +276,21 @@ class VibeAudioHandler(private val context: Context) :
                     result.success(true)
                 }
 
+                // Pitch shifting methods
+                "setPitch" -> {
+                    val semitones = call.argument<Double>("semitones")?.toFloat() ?: 0f
+                    engine.setPitch(semitones)
+                    result.success(true)
+                }
+
+                "getPitch" -> {
+                    result.success(engine.getPitch().toDouble())
+                }
+
+                "isPitchEnabled" -> {
+                    result.success(engine.isPitchEnabled())
+                }
+
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {

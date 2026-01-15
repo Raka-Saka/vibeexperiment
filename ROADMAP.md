@@ -256,7 +256,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [ ] Material You adaptive colors (system-wide dynamic theming)
 
 ### Audio Engine Enhancements
-- [ ] **Pitch adjustment for VibeEngine** - Requires SoundTouch DSP library integration
+- [x] **Pitch adjustment for VibeEngine** - Sonic algorithm (WSOLA) for pitch shifting without tempo change
 - [ ] Time stretching (change tempo without pitch)
 
 ---
@@ -383,7 +383,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [ ] Theme system (light mode, AMOLED black)
 - [ ] Dynamic colors from album art
 - [ ] Material You
-- [ ] Pitch adjustment for VibeEngine (SoundTouch)
+- [x] Pitch adjustment for VibeEngine (Sonic algorithm)
 
 ### v2.0 - Advanced
 - [ ] AI features

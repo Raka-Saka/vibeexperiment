@@ -154,6 +154,9 @@ class VibeAudioEngine(private val context: Context) {
     // Audio DSP - native effects processing
     private val audioDSP = AudioDSP()
 
+    // Pitch shifter - independent pitch control without tempo change
+    private val pitchShifter = SonicPitchShifter()
+
     // Event sink for Flutter
     private var eventSink: EventChannel.EventSink? = null
     private var pulseEventSink: EventChannel.EventSink? = null
@@ -302,6 +305,9 @@ class VibeAudioEngine(private val context: Context) {
             // Initialize AudioDSP for effects processing
             audioDSP.configure(sampleRate, channelCount)
 
+            // Initialize pitch shifter
+            pitchShifter.configure(sampleRate, channelCount)
+
             isPrepared.set(true)
             setState(State.READY)
             Log.d(TAG, "Prepared successfully")
@@ -423,6 +429,7 @@ class VibeAudioEngine(private val context: Context) {
 
         mediaExtractor?.seekTo(positionMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
         mediaCodec?.flush()
+        pitchShifter.reset()  // Reset pitch shifter state on seek
         positionUs.set(positionMs * 1000)
 
         if (wasPlaying) {
@@ -482,6 +489,25 @@ class VibeAudioEngine(private val context: Context) {
     }
 
     fun getVolume(): Float = volume
+
+    /**
+     * Set pitch in semitones (-12 to +12).
+     * 0 = normal pitch
+     * +12 = one octave higher
+     * -12 = one octave lower
+     *
+     * Unlike speed, pitch does NOT affect playback tempo.
+     */
+    fun setPitch(semitones: Float) {
+        val clampedSemitones = semitones.coerceIn(-12f, 12f)
+        pitchShifter.setPitchSemitones(clampedSemitones)
+        pitchShifter.setEnabled(clampedSemitones != 0f)
+        Log.d(TAG, "Pitch set to $clampedSemitones semitones")
+    }
+
+    fun getPitch(): Float = pitchShifter.getPitchSemitones()
+
+    fun isPitchEnabled(): Boolean = pitchShifter.isEnabled()
 
     //endregion
 
@@ -553,6 +579,7 @@ class VibeAudioEngine(private val context: Context) {
      */
     fun resetDSP() {
         audioDSP.reset()
+        pitchShifter.reset()
     }
 
     //endregion
@@ -1118,7 +1145,12 @@ class VibeAudioEngine(private val context: Context) {
                         // Apply DSP effects (EQ, reverb) if enabled
                         val processedData = applyDSP(audioData)
 
-                        track.write(processedData, 0, processedData.size)
+                        // Apply pitch shifting if enabled
+                        val finalData = applyPitchShift(processedData)
+
+                        if (finalData.isNotEmpty()) {
+                            track.write(finalData, 0, finalData.size)
+                        }
 
                         // Update position
                         positionUs.set(bufferInfo.presentationTimeUs)
@@ -1170,6 +1202,41 @@ class VibeAudioEngine(private val context: Context) {
         val result = ByteArray(audioData.size)
         for (i in samples.indices) {
             val s = samples[i].toInt()
+            result[i * 2] = (s and 0xFF).toByte()
+            result[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+        }
+
+        return result
+    }
+
+    /**
+     * Apply pitch shifting to audio data.
+     * NOTE: This may return a different number of samples than input!
+     * - pitch > 1.0: fewer output samples
+     * - pitch < 1.0: more output samples
+     */
+    private fun applyPitchShift(audioData: ByteArray): ByteArray {
+        if (!pitchShifter.isEnabled()) return audioData
+
+        // Convert bytes to shorts (little-endian 16-bit PCM)
+        val samples = ShortArray(audioData.size / 2)
+        for (i in samples.indices) {
+            val lo = audioData[i * 2].toInt() and 0xFF
+            val hi = audioData[i * 2 + 1].toInt()
+            samples[i] = ((hi shl 8) or lo).toShort()
+        }
+
+        // Process through pitch shifter (may return different size!)
+        val processedSamples = pitchShifter.process(samples)
+
+        if (processedSamples.isEmpty()) {
+            return ByteArray(0)
+        }
+
+        // Convert back to bytes
+        val result = ByteArray(processedSamples.size * 2)
+        for (i in processedSamples.indices) {
+            val s = processedSamples[i].toInt()
             result[i * 2] = (s and 0xFF).toByte()
             result[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
         }

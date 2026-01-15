@@ -123,7 +123,7 @@ class SettingsScreen extends ConsumerWidget {
               context,
               icon: Icons.music_note_rounded,
               title: 'Pitch Adjustment',
-              subtitle: '${settings.pitchLabel} (classic engine only)',
+              subtitle: settings.pitchLabel,
               trailing: const Icon(
                 Icons.chevron_right_rounded,
                 color: AppTheme.textMuted,
@@ -1443,22 +1443,22 @@ class SettingsScreen extends ConsumerWidget {
                   style: TextStyle(color: AppTheme.textMuted),
                 ),
                 const SizedBox(height: 12),
-                // VibeEngine warning
+                // Pitch info
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
+                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                    border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline_rounded, color: Colors.orange, size: 18),
+                      Icon(Icons.info_outline_rounded, color: AppTheme.primaryColor, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Pitch adjustment requires the classic audio engine. Enable it in developer options.',
-                          style: TextStyle(color: Colors.orange.shade200, fontSize: 12),
+                          'Pitch is adjusted without changing tempo using advanced DSP processing.',
+                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                         ),
                       ),
                     ],

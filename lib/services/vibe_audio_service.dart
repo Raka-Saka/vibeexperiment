@@ -489,6 +489,42 @@ class VibeAudioService {
     }
   }
 
+  /// Set pitch in semitones (-12 to +12)
+  /// 0 = normal pitch
+  /// +12 = one octave higher
+  /// -12 = one octave lower
+  /// Unlike speed, pitch does NOT affect playback tempo.
+  Future<void> setPitch(double semitones) async {
+    try {
+      await _methodChannel.invokeMethod('setPitch', {'semitones': semitones});
+      Log.audio.d('VibeAudio: Pitch set to $semitones semitones');
+    } catch (e) {
+      Log.audio.d('VibeAudio: setPitch failed: $e');
+    }
+  }
+
+  /// Get current pitch in semitones
+  Future<double> getPitch() async {
+    try {
+      final result = await _methodChannel.invokeMethod('getPitch');
+      return (result as num?)?.toDouble() ?? 0.0;
+    } catch (e) {
+      Log.audio.d('VibeAudio: getPitch failed: $e');
+      return 0.0;
+    }
+  }
+
+  /// Check if pitch shifting is enabled
+  Future<bool> isPitchEnabled() async {
+    try {
+      final result = await _methodChannel.invokeMethod('isPitchEnabled');
+      return result == true;
+    } catch (e) {
+      Log.audio.d('VibeAudio: isPitchEnabled failed: $e');
+      return false;
+    }
+  }
+
   //endregion
 
   //region Crossfade

@@ -1348,10 +1348,14 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setPitch(double semitones) async {
     final pitch = 1.0 + (semitones / 12.0);
     _pitchSubject.add(pitch);
-    if (!_useVibeEngine) {
+    if (_useVibeEngine) {
+      // Use native pitch shifting in VibeEngine (Sonic algorithm)
+      // This changes pitch WITHOUT affecting tempo
+      await vibeAudioService.setPitch(semitones);
+    } else {
+      // Use just_audio's pitch (this also changes tempo slightly)
       await _player.setPitch(pitch.clamp(0.5, 2.0));
     }
-    // Note: Native pitch control would require SoundTouch or similar DSP library
   }
 
   double get currentPitchSemitones {
