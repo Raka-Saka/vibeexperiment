@@ -191,16 +191,17 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 **Priority: High** | Target: v1.3
 
 ### Play Statistics
-- [ ] Track play counts per song
-- [ ] Record listening history with timestamps
-- [ ] Total listening time tracking
-- [ ] Daily/weekly/monthly stats view
+- [x] Track play counts per song
+- [x] Record listening history with timestamps
+- [x] Total listening time tracking
+- [x] Daily/weekly/monthly stats view
 
 ### Smart Playlists
-- [ ] Recently Played (last 50/100 songs)
-- [ ] Most Played (top tracks)
-- [ ] Recently Added (last 30 days)
-- [ ] Favorites shuffle
+- [x] Recently Played (last 50/100 songs)
+- [x] Most Played (top tracks)
+- [x] Recently Added (last 30 days)
+- [x] Heavy Rotation (favorites by completion rate)
+- [x] Rediscover (forgotten songs)
 - [ ] Genre-based auto-playlists
 
 ### Rule-Based Playlists
@@ -364,8 +365,8 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [ ] Bug fixes from beta testing
 
 ### v1.3 - Smart Library
-- [ ] Play statistics
-- [ ] Smart playlists
+- [x] Play statistics
+- [x] Smart playlists
 - [x] Custom EQ presets
 
 ### v1.4 - Connectivity

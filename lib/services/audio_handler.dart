@@ -12,6 +12,7 @@ import 'visualizer_service.dart';
 import 'vibe_audio_service.dart';
 import 'log_service.dart';
 import 'playback_state_service.dart';
+import 'play_statistics_service.dart';
 
 /// Audio handler that integrates with audio_service for:
 /// - Background playback
@@ -53,6 +54,11 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _replayGainInitialized = false;
   double _baseVolume = 1.0;
   double _normalizationMultiplier = 1.0;
+
+  // Play statistics tracking
+  bool _statisticsInitialized = false;
+  Timer? _listenTimeTimer;
+  DateTime? _lastPositionUpdate;
 
   // Stream subscriptions for cleanup
   final List<StreamSubscription> _subscriptions = [];
@@ -159,6 +165,15 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
       _audioEffectsInitialized = true;
     }
 
+    // Initialize play statistics service
+    if (!_statisticsInitialized) {
+      await playStatisticsService.init();
+      _statisticsInitialized = true;
+    }
+
+    // Start listen time tracking timer
+    _startListenTimeTracker();
+
     // Initialize VibeAudioService if enabled
     if (_useVibeEngine) {
       await vibeAudioService.initialize();
@@ -207,6 +222,9 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
 
           // Update media item for notification/lock screen
           _updateMediaItem(song);
+
+          // Track song started for statistics
+          _trackSongStarted(song);
 
           // Save playback state (for restore on app restart)
           _savePlaybackState();
@@ -588,6 +606,12 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Called when a track completes naturally (VibeAudioEngine)
   Future<void> _onTrackCompleted() async {
+    // Track completed song for statistics
+    final completedSong = currentSong;
+    if (completedSong != null) {
+      _trackSongCompleted(completedSong, completedSong.duration);
+    }
+
     _resetCrossfadeState();
 
     final loopMode = _loopMode;
@@ -729,6 +753,13 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     _operationInProgress = true;
 
+    // Track skip for statistics
+    final skippedSong = currentSong;
+    final listenedMs = (_useVibeEngine ? vibeAudioService.position : _player.position).inMilliseconds;
+    if (skippedSong != null) {
+      _trackSongSkipped(skippedSong, listenedMs);
+    }
+
     try {
       _resetCrossfadeState();
       // Clear gapless preparation since we're manually skipping
@@ -778,6 +809,13 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
         }
         // Early return handled by finally block
       } else {
+        // Track skip for statistics (only when actually going to previous track)
+        final skippedSong = currentSong;
+        final listenedMs = currentPosition.inMilliseconds;
+        if (skippedSong != null) {
+          _trackSongSkipped(skippedSong, listenedMs);
+        }
+
         // Clear gapless preparation since we're manually skipping
         _preparedNextPath = null;
         await vibeAudioService.clearNextTrack();
@@ -1349,6 +1387,8 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
 
   Future<void> dispose() async {
     _cancelFade();
+    _listenTimeTimer?.cancel();
+    playStatisticsService.onPlaybackStopped();
     for (final subscription in _subscriptions) {
       await subscription.cancel();
     }
@@ -1361,6 +1401,36 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     await _shuffleModeSubject.close();
     await _speedSubject.close();
     await _pitchSubject.close();
+  }
+
+  // ============ Play Statistics Tracking ============
+
+  /// Start timer to track listen time every 10 seconds
+  void _startListenTimeTracker() {
+    _listenTimeTimer?.cancel();
+    _listenTimeTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (playing && currentSong != null) {
+        playStatisticsService.updateListenTime(10000); // 10 seconds in ms
+      }
+    });
+  }
+
+  /// Track when a song starts playing
+  void _trackSongStarted(Song song) {
+    playStatisticsService.onSongStarted(song);
+  }
+
+  /// Track when a song completes
+  void _trackSongCompleted(Song song, int listenedMs) {
+    playStatisticsService.onSongCompleted(song);
+    playStatisticsService.addHistoryEntry(song, listenedMs, true);
+  }
+
+  /// Track when a song is skipped
+  void _trackSongSkipped(Song song, int listenedMs) {
+    playStatisticsService.onSongSkipped(song);
+    final completed = song.duration > 0 && listenedMs > (song.duration * 0.8);
+    playStatisticsService.addHistoryEntry(song, listenedMs, completed);
   }
 }
 
