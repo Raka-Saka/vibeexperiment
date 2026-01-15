@@ -181,9 +181,9 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Skip crossfade for live albums / continuous mixes
 
 ### EQ Enhancements
-- [ ] Custom preset save/load
-- [ ] Per-song EQ memory (optional)
-- [ ] EQ curve visualization
+- [x] Custom preset save/load
+- [x] Per-song EQ memory (optional)
+- [x] EQ curve visualization
 
 ---
 
@@ -366,7 +366,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 ### v1.3 - Smart Library
 - [ ] Play statistics
 - [ ] Smart playlists
-- [ ] Custom EQ presets
+- [x] Custom EQ presets
 
 ### v1.4 - Connectivity
 - [ ] Android Auto

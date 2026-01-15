@@ -169,7 +169,9 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 ## License
 
-This project is for experimental/educational purposes.
+Copyright (c) 2026 Raka-Saka. All rights reserved.
+
+This software is proprietary. No part of this software may be reproduced, distributed, or transmitted in any form or by any means without the prior written permission of the copyright holder.
 
 ## Acknowledgments
 
