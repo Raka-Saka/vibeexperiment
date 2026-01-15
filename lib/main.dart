@@ -5,6 +5,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'app.dart';
 import 'services/audio_handler.dart';
 import 'services/log_service.dart';
+import 'services/play_statistics_service.dart';
+import 'services/equalizer_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +18,14 @@ void main() async {
   // Initialize Hive for local storage
   await Hive.initFlutter();
   Log.storage.d('Hive initialized');
+
+  // Initialize play statistics service (for play counts on song tiles)
+  await playStatisticsService.init();
+  Log.storage.d('Play statistics initialized');
+
+  // Initialize equalizer storage (for restoring EQ settings)
+  await equalizerStorageService.init();
+  Log.eq.d('Equalizer storage initialized, EQ enabled: ${equalizerStorageService.globalState.isEnabled}');
 
   // Initialize audio service for background playback
   await initAudioService();

@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
 import '../shared/models/song.dart';
 import 'equalizer_service.dart';
+import 'equalizer_storage_service.dart';
 import 'audio_analysis_service.dart';
 import 'replay_gain_service.dart';
 import 'audio_effects_service.dart';
@@ -165,11 +166,8 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
       _audioEffectsInitialized = true;
     }
 
-    // Initialize play statistics service
-    if (!_statisticsInitialized) {
-      await playStatisticsService.init();
-      _statisticsInitialized = true;
-    }
+    // Play statistics service is initialized in main.dart
+    _statisticsInitialized = true;
 
     // Start listen time tracking timer
     _startListenTimeTracker();
@@ -299,6 +297,16 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     await equalizerService.setAudioSessionId(sessionId);
     await audioEffectsService.setAudioSessionId(sessionId);
     await visualizerService.setAudioSessionId(sessionId);
+
+    // Restore saved EQ settings if EQ was enabled
+    final savedState = equalizerStorageService.globalState;
+    if (savedState.isEnabled) {
+      Log.eq.d('AudioHandler: Restoring saved EQ settings (enabled: true)');
+      await equalizerService.setEnabled(true);
+      await equalizerService.setAllBands(savedState.bands);
+      await equalizerService.setBassBoost(savedState.bassBoost);
+      await equalizerService.setVirtualizer(savedState.virtualizer);
+    }
   }
 
   /// Transform just_audio events to audio_service PlaybackState

@@ -68,8 +68,7 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
   }
 
   Future<void> _init() async {
-    await equalizerStorageService.init();
-
+    // equalizerStorageService is already initialized in main.dart
     // Load saved global EQ state
     final savedState = equalizerStorageService.globalState;
 
@@ -92,11 +91,8 @@ class EqualizerNotifier extends StateNotifier<EqualizerState> {
       perSongEnabled: equalizerStorageService.perSongEnabled,
     );
 
-    // Apply saved settings to native equalizer if enabled
-    if (savedState.isEnabled) {
-      await equalizerService.setEnabled(true);
-      await _applyAllSettings();
-    }
+    // Note: Native EQ is restored by audio_handler when playback starts
+    // (requires audio session ID which is only available during playback)
 
     // Listen to song changes for per-song EQ
     audioHandler.currentSongStream.listen((song) {
