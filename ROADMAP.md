@@ -1,6 +1,6 @@
 # VibePlay Roadmap
 
-> **Last Updated:** January 15, 2026
+> **Last Updated:** January 16, 2026
 > **Current Version:** 1.1.0 (Beta)
 > **Status:** Feature-rich, needs hardening for production release
 
@@ -113,7 +113,6 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Sleep timer with presets (5min - 2hr)
 - [x] Song info dialog
 - [x] Share functionality
-- [x] Dynamic theme colors from album artwork
 - [x] Settings persistence (Hive)
 - [x] File deletion support
 
@@ -242,7 +241,6 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 ### More Widgets
 - [ ] Large widget (4x4) - Full controls + queue preview + progress
 - [ ] Extra-small widget (2x1) - Mini play/pause
-- [ ] Material You adaptive colors (dynamic theming)
 
 ### Lock Screen & Notifications
 - [ ] Enhanced lock screen controls
@@ -254,6 +252,12 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [ ] AMOLED black mode
 - [ ] Custom accent color picker
 - [ ] Per-album theme option
+- [ ] **Dynamic Colors** - Extract dominant colors from album art and adapt UI
+- [ ] Material You adaptive colors (system-wide dynamic theming)
+
+### Audio Engine Enhancements
+- [ ] **Pitch adjustment for VibeEngine** - Requires SoundTouch DSP library integration
+- [ ] Time stretching (change tempo without pitch)
 
 ---
 
@@ -376,8 +380,10 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 ### v1.5 - UI Polish
 - [ ] More widgets
-- [ ] Theme system
+- [ ] Theme system (light mode, AMOLED black)
+- [ ] Dynamic colors from album art
 - [ ] Material You
+- [ ] Pitch adjustment for VibeEngine (SoundTouch)
 
 ### v2.0 - Advanced
 - [ ] AI features

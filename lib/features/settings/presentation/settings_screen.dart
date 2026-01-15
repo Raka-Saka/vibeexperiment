@@ -61,8 +61,12 @@ class SettingsScreen extends ConsumerWidget {
               context,
               icon: Icons.graphic_eq_rounded,
               title: 'Audio Quality',
-              subtitle: settings.audioQualityLabel,
-              onTap: () => _showAudioQualityDialog(context, ref, settings),
+              subtitle: 'High quality (native decoding)',
+              trailing: Icon(
+                Icons.check_circle_rounded,
+                color: AppTheme.primaryColor,
+              ),
+              onTap: () => _showAudioQualityInfo(context),
             ),
             _buildSettingsTile(
               context,
@@ -119,7 +123,7 @@ class SettingsScreen extends ConsumerWidget {
               context,
               icon: Icons.music_note_rounded,
               title: 'Pitch Adjustment',
-              subtitle: settings.pitchLabel,
+              subtitle: '${settings.pitchLabel} (classic engine only)',
               trailing: const Icon(
                 Icons.chevron_right_rounded,
                 color: AppTheme.textMuted,
@@ -187,17 +191,13 @@ class SettingsScreen extends ConsumerWidget {
               context,
               icon: Icons.color_lens_rounded,
               title: 'Dynamic Colors',
-              subtitle: 'Colors adapt to album art',
-              trailing: Switch(
-                value: settings.dynamicColorsEnabled,
-                onChanged: (value) {
-                  HapticFeedback.selectionClick();
-                  ref.read(settingsProvider.notifier).toggleDynamicColors();
-                },
-                activeColor: AppTheme.primaryColor,
+              subtitle: 'Coming soon - colors adapt to album art',
+              trailing: Icon(
+                Icons.schedule_rounded,
+                color: AppTheme.textMuted,
               ),
               onTap: () {
-                ref.read(settingsProvider.notifier).toggleDynamicColors();
+                _showComingSoonInfo(context, 'Dynamic Colors', 'This feature will automatically adapt the app\'s colors based on the currently playing album art.');
               },
             ),
 
@@ -339,69 +339,6 @@ class SettingsScreen extends ConsumerWidget {
                   HapticFeedback.selectionClick();
                   ref.read(settingsProvider.notifier).setPlaybackSpeed(speed);
                   audioHandler.setPlaybackSpeed(speed);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAudioQualityDialog(BuildContext context, WidgetRef ref, AppSettings settings) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.darkCard,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Audio Quality',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Higher quality uses more battery',
-              style: TextStyle(color: AppTheme.textMuted),
-            ),
-            const SizedBox(height: 16),
-            ...AudioQuality.values.map((quality) {
-              final isSelected = settings.audioQuality == quality;
-              String title;
-              String subtitle;
-              switch (quality) {
-                case AudioQuality.low:
-                  title = 'Low';
-                  subtitle = 'Saves battery, reduced processing';
-                case AudioQuality.medium:
-                  title = 'Medium';
-                  subtitle = 'Balanced quality and battery';
-                case AudioQuality.high:
-                  title = 'High';
-                  subtitle = 'Best audio quality';
-              }
-              return ListTile(
-                leading: isSelected
-                    ? const Icon(Icons.check, color: AppTheme.primaryColor)
-                    : const SizedBox(width: 24),
-                title: Text(
-                  title,
-                  style: TextStyle(
-                    color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                ),
-                subtitle: Text(subtitle),
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(settingsProvider.notifier).setAudioQuality(quality);
                   Navigator.pop(context);
                 },
               );
@@ -1184,6 +1121,50 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  void _showAudioQualityInfo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Audio Quality'),
+        content: const Text(
+          'VibePlay always plays your music at the highest quality possible. '
+          'Audio is decoded natively without any compression or resampling, '
+          'ensuring you hear exactly what the artist intended.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showComingSoonInfo(BuildContext context, String title, String description) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: Row(
+          children: [
+            Icon(Icons.schedule_rounded, color: AppTheme.primaryColor),
+            const SizedBox(width: 8),
+            Text(title),
+          ],
+        ),
+        content: Text(description),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmResetSettings(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
@@ -1461,7 +1442,29 @@ class SettingsScreen extends ConsumerWidget {
                   'Shift pitch up or down in semitones',
                   style: TextStyle(color: AppTheme.textMuted),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+                // VibeEngine warning
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: Colors.orange, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Pitch adjustment requires the classic audio engine. Enable it in developer options.',
+                          style: TextStyle(color: Colors.orange.shade200, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 // Pitch value display
                 Center(
