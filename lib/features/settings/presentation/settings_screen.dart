@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../services/audio_handler.dart';
 import '../../equalizer/presentation/equalizer_screen.dart';
+import '../../statistics/presentation/statistics_screen.dart';
 import '../../library/data/media_scanner.dart';
 import '../data/settings_provider.dart';
 
@@ -130,6 +131,20 @@ class SettingsScreen extends ConsumerWidget {
 
             // Library section
             _buildSectionHeader(context, 'Library'),
+            _buildSettingsTile(
+              context,
+              icon: Icons.bar_chart_rounded,
+              title: 'Statistics',
+              subtitle: 'Play counts, listening time, smart playlists',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const StatisticsScreen(),
+                  ),
+                );
+              },
+            ),
             _buildSettingsTile(
               context,
               icon: Icons.folder_rounded,
