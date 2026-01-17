@@ -903,6 +903,10 @@ class VibeAudioEngine(private val context: Context) {
         setState(State.PLAYING)
         onDurationChanged?.invoke(durationMs)
 
+        // CRITICAL: Notify Flutter that we transitioned to the next track
+        // This lets Flutter update its queue index and prepare the NEXT track for gapless
+        onAutoTransition?.invoke()
+
         Log.d(TAG, "Crossfade transition complete")
     }
 
@@ -1299,6 +1303,15 @@ class VibeAudioEngine(private val context: Context) {
         if (outputDone && isPlaying.get()) {
             // Track completed - check if we should auto-advance to next track
             // This is critical for background playback when Flutter might be throttled
+
+            // IMPORTANT: Skip auto-transition if crossfade is active
+            // Crossfade already started the next track and will handle the transition
+            if (isCrossfading.get()) {
+                Log.d(TAG, "Track completed during crossfade - letting crossfade handle transition")
+                // Don't stop playback or signal completion - crossfade is managing it
+                return
+            }
+
             if (nextPrepared.get() && gaplessEnabled) {
                 Log.d(TAG, "Track completed - auto-advancing to prepared next track (background-safe)")
                 mainHandler.post {
