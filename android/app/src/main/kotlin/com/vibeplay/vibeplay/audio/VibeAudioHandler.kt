@@ -210,6 +210,17 @@ class VibeAudioHandler(private val context: Context) :
                     result.success(engine.isDSPEnabled())
                 }
 
+                // AudioPulse (FFT Analysis) control for battery optimization
+                "setAudioPulseEnabled" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    engine.setAudioPulseEnabled(enabled)
+                    result.success(true)
+                }
+
+                "isAudioPulseEnabled" -> {
+                    result.success(engine.isAudioPulseEnabled())
+                }
+
                 "setNativeEQEnabled" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
                     engine.setNativeEQEnabled(enabled)

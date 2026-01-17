@@ -385,7 +385,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const RulePlaylistsScreen(),
+                    builder: (_) => const RulePlaylistEditorScreen(),
                   ),
                 );
               },

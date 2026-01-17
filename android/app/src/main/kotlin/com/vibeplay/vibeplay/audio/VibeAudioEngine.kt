@@ -540,6 +540,24 @@ class VibeAudioEngine(private val context: Context) {
 
     fun isDSPEnabled(): Boolean = audioDSP.isEnabled()
 
+    //endregion
+
+    //region AudioPulse (FFT Analysis) Control
+
+    /**
+     * Enable or disable AudioPulse FFT analysis.
+     * Disabling saves significant battery when visualizer is not visible.
+     */
+    fun setAudioPulseEnabled(enabled: Boolean) {
+        audioPulse.setEnabled(enabled)
+        Log.d(TAG, "AudioPulse ${if (enabled) "enabled" else "disabled"}")
+    }
+
+    fun isAudioPulseEnabled(): Boolean = audioPulse.isEnabled()
+
+//endregion
+
+    //region Native EQ
     /**
      * Enable or disable native EQ
      */

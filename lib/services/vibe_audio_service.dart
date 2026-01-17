@@ -609,6 +609,36 @@ class VibeAudioService {
     }
   }
 
+  //endregion
+
+  //region AudioPulse (FFT Analysis) Control
+
+  /// Enable or disable AudioPulse FFT analysis.
+  /// Disabling saves significant battery when visualizer is not visible.
+  Future<void> setAudioPulseEnabled(bool enabled) async {
+    try {
+      await _methodChannel.invokeMethod('setAudioPulseEnabled', {'enabled': enabled});
+      Log.audio.d('VibeAudio: AudioPulse ${enabled ? "enabled" : "disabled"}');
+    } catch (e) {
+      Log.audio.d('VibeAudio: setAudioPulseEnabled failed: $e');
+    }
+  }
+
+  /// Check if AudioPulse FFT analysis is enabled
+  Future<bool> isAudioPulseEnabled() async {
+    try {
+      final result = await _methodChannel.invokeMethod('isAudioPulseEnabled');
+      return result == true;
+    } catch (e) {
+      Log.audio.d('VibeAudio: isAudioPulseEnabled failed: $e');
+      return false;
+    }
+  }
+
+  //endregion
+
+  //region Native EQ
+
   /// Enable or disable native EQ
   Future<void> setNativeEQEnabled(bool enabled) async {
     try {

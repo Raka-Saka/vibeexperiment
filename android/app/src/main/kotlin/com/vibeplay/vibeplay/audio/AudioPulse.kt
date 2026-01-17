@@ -46,6 +46,10 @@ class AudioPulse {
     private var sampleRate = 44100
     private var channelCount = 2
 
+    // Enable/disable for battery optimization
+    @Volatile
+    private var enabled = false
+
     // Sample buffer (circular)
     private val sampleBuffer = FloatArray(FFT_SIZE)
     private var sampleIndex = 0
@@ -123,6 +127,23 @@ class AudioPulse {
     }
 
     /**
+     * Enable/disable FFT analysis for battery optimization.
+     * When disabled, processSamples() becomes a no-op.
+     */
+    fun setEnabled(enable: Boolean) {
+        if (enabled != enable) {
+            enabled = enable
+            Log.d(TAG, "AudioPulse ${if (enable) "enabled" else "disabled"}")
+            if (!enable) {
+                // Reset values when disabled so visualizer shows idle state
+                reset()
+            }
+        }
+    }
+
+    fun isEnabled(): Boolean = enabled
+
+    /**
      * Reset all state
      */
     fun reset() {
@@ -143,6 +164,9 @@ class AudioPulse {
      * Process incoming PCM samples (16-bit signed)
      */
     fun processSamples(samples: ShortArray) {
+        // Skip processing if disabled (battery optimization)
+        if (!enabled) return
+
         // Convert to mono float and store
         var i = 0
         while (i < samples.size) {

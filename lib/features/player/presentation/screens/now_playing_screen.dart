@@ -8,6 +8,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/dynamic_colors.dart';
 import '../../../../services/sleep_timer_service.dart';
+import '../../../../services/vibe_audio_service.dart';
 import '../../../../shared/widgets/song_dialogs.dart';
 import '../../../library/data/media_scanner.dart';
 import '../../../settings/data/settings_provider.dart';
@@ -46,6 +47,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
       vsync: this,
     )..repeat();
     _startHideTimer();
+    // Enable AudioPulse FFT when entering this screen
+    _setAudioPulseEnabled(true);
   }
 
   @override
@@ -53,6 +56,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
     _rotationController.dispose();
+    // Disable AudioPulse FFT when leaving this screen to save battery
+    _setAudioPulseEnabled(false);
     super.dispose();
   }
 
@@ -62,9 +67,18 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     final wasInForeground = _isAppInForeground;
     _isAppInForeground = state == AppLifecycleState.resumed;
 
-    if (wasInForeground != _isAppInForeground && mounted) {
-      setState(() {});
+    if (wasInForeground != _isAppInForeground) {
+      // Enable/disable AudioPulse based on foreground state
+      _setAudioPulseEnabled(_isAppInForeground);
+      if (mounted) {
+        setState(() {});
+      }
     }
+  }
+
+  /// Enable or disable AudioPulse FFT analysis for battery optimization
+  void _setAudioPulseEnabled(bool enabled) {
+    vibeAudioService.setAudioPulseEnabled(enabled);
   }
 
   void _startHideTimer() {
