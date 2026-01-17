@@ -156,8 +156,11 @@ void main() {
             float pastAngle = pendulumAngle(i, numPendulums, pastTime, modAmplitude, baseFreq);
             vec2 pastBobPos = anchorPos + vec2(sin(pastAngle) * len, -cos(pastAngle) * len);
 
+            // Smooth fade with extra end fade to prevent abrupt cutoff
+            float normalizedT = t / trailLength;
+            float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedT);
             float trailDist = length(uv - pastBobPos);
-            float trailGlow = exp(-trailDist * 50.0) * pow(trailFade, t) * 0.2;
+            float trailGlow = exp(-trailDist * 50.0) * pow(trailFade, t) * endFade * 0.2;
 
             color += pendulumColor * trailGlow;
         }

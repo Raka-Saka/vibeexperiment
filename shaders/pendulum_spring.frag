@@ -133,7 +133,7 @@ void main() {
 
         color += bobColor * (bob + bobGlow);
 
-        // Bounce trail
+        // Bounce trail with smooth end fade
         for (float t = 1.0; t < 10.0; t += 1.0) {
             float pastTime = time - t * 0.02;
             vec3 pastState = springPendulum(pastTime, i, baseFreq, bass, mid);
@@ -142,7 +142,9 @@ void main() {
             vec2 pastBob = anchor + pastLen * vec2(sin(pastAngle), -cos(pastAngle));
 
             float trailDist = length(uv - pastBob);
-            float trailGlow = exp(-trailDist * 50.0) * (1.0 - t / 10.0) * 0.1;
+            float normalizedT = t / 10.0;
+            float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedT);
+            float trailGlow = exp(-trailDist * 50.0) * (1.0 - normalizedT) * endFade * 0.1;
             color += bobColor * trailGlow;
         }
 

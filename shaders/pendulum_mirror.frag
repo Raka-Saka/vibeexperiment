@@ -43,15 +43,17 @@ vec3 drawPendulum(vec2 uv, vec2 anchor, float angle, float len, float bobRadius,
 
     vec2 bobPos = anchor + len * vec2(sin(angle), -cos(angle));
 
-    // Trail
+    // Trail with smooth end fade
     for (float t = 1.0; t < 12.0; t += 1.0) {
         float pastTime = time - t * 0.02;
         float pastAngle = pendulumAngle(idx, numPendulums, pastTime, amplitude, baseFreq);
         vec2 pastBobPos = anchor + len * vec2(sin(pastAngle), -cos(pastAngle));
 
         float trailDist = length(uv - pastBobPos);
-        float fade = pow(1.0 - t / 12.0, 1.5);
-        float trailGlow = exp(-trailDist * 45.0) * fade * trailFade;
+        float normalizedT = t / 12.0;
+        float fade = pow(1.0 - normalizedT, 1.5);
+        float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedT);
+        float trailGlow = exp(-trailDist * 45.0) * fade * endFade * trailFade;
         result += bobColor * trailGlow;
     }
 

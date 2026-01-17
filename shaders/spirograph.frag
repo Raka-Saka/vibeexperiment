@@ -164,9 +164,11 @@ void main() {
         float thickness = 0.008 + beat * 0.006;
         thickness *= (1.0 - closestT * 0.7);
 
-        // Trail intensity - fade toward tail
+        // Trail intensity - fade toward tail with smooth end fade
         float intensity = smoothstep(thickness * 2.0, thickness * 0.3, minDist);
-        intensity *= (1.0 - closestT * 0.85);
+        // Smooth fade-out: gradual from 0.5, then rapid fade at the end
+        float tailFade = 1.0 - smoothstep(0.5, 1.0, closestT);
+        intensity *= tailFade;
 
         // Layer color - hue based on layer and spectral centroid
         float spectralCentroid = (bass * 0.2 + mid * 0.5 + treble * 0.8);
@@ -176,9 +178,9 @@ void main() {
 
         vec3 trailColor = hsv2rgb(vec3(hue, sat, val));
 
-        // Add glow
+        // Add glow with smooth fade
         float glow = exp(-minDist * 60.0) * 0.5;
-        glow *= (1.0 - closestT * 0.6);
+        glow *= tailFade;
 
         color += trailColor * (intensity + glow) * (0.5 + float(2 - layer) * 0.25);
     }
@@ -207,16 +209,18 @@ void main() {
         prevExtPos = pos;
     }
 
-    // Extended trail rendering
+    // Extended trail rendering with smooth end fade
     float extThickness = 0.006 + energy * 0.004;
     extThickness *= (1.0 - closestExtT * 0.6);
 
     float extIntensity = smoothstep(extThickness * 2.0, extThickness * 0.3, minExtDist);
-    extIntensity *= (1.0 - closestExtT * 0.8);
+    // Smooth fade-out for extended trail
+    float extTailFade = 1.0 - smoothstep(0.5, 1.0, closestExtT);
+    extIntensity *= extTailFade;
 
     // Golden/warm color for extended pattern
     vec3 extColor = hsv2rgb(vec3(0.1 + time * 0.01, 0.6, 0.9));
-    float extGlow = exp(-minExtDist * 80.0) * 0.4;
+    float extGlow = exp(-minExtDist * 80.0) * 0.4 * extTailFade;
 
     color += extColor * (extIntensity + extGlow) * 0.6;
 

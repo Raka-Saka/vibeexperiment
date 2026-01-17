@@ -102,7 +102,7 @@ void main() {
         vec3 color1 = hsv2rgb(vec3(hue1, 0.7, 0.9));
         vec3 color2 = hsv2rgb(vec3(hue2, 0.8, 0.95));
 
-        // Draw trail for end point (the chaotic part)
+        // Draw trail for end point (the chaotic part) with smooth end fade
         for (float t = 1.0; t < 20.0; t += 1.0) {
             float pastTime = time - t * 0.015;
             vec2 pastAngles = doublePendulumAngles(pastTime, i, energy, bass, mid);
@@ -110,24 +110,28 @@ void main() {
             vec2 pastJoint2 = pastJoint1 + l2 * vec2(sin(pastAngles.x + pastAngles.y), -cos(pastAngles.x + pastAngles.y));
 
             float trailDist = length(uv - pastJoint2);
-            float fade = 1.0 - t / 20.0;
-            float trailGlow = exp(-trailDist * 50.0) * fade * 0.12;
+            float normalizedT = t / 20.0;
+            float fade = 1.0 - normalizedT;
+            float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedT);
+            float trailGlow = exp(-trailDist * 50.0) * fade * endFade * 0.12;
             color += color2 * trailGlow;
         }
 
-        // Draw first arm
+        // Draw first arm with end fade
         for (float s = 0.0; s < 1.0; s += 0.05) {
             vec2 armPoint = mix(anchor, joint1, s);
             float armDist = length(uv - armPoint);
-            float armLine = exp(-armDist * 80.0) * 0.2;
+            float armEndFade = 1.0 - smoothstep(0.8, 1.0, s);
+            float armLine = exp(-armDist * 80.0) * 0.2 * armEndFade;
             color += color1 * armLine * 0.5;
         }
 
-        // Draw second arm
+        // Draw second arm with end fade
         for (float s = 0.0; s < 1.0; s += 0.05) {
             vec2 armPoint = mix(joint1, joint2, s);
             float armDist = length(uv - armPoint);
-            float armLine = exp(-armDist * 80.0) * 0.2;
+            float armEndFade = 1.0 - smoothstep(0.8, 1.0, s);
+            float armLine = exp(-armDist * 80.0) * 0.2 * armEndFade;
             color += color2 * armLine * 0.5;
         }
 

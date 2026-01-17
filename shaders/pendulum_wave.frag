@@ -95,11 +95,14 @@ void main() {
         vec2 topPos = pivot + len * vec2(sin(angle), cos(angle));
         vec2 bottomPos = pivot - len * vec2(sin(angle), cos(angle));
 
-        // Draw rod
+        // Draw rod with smooth end fades
         for (float s = -1.0; s <= 1.0; s += 0.08) {
             vec2 rodPoint = pivot + len * s * vec2(sin(angle), cos(angle));
             float rodDist = length(uv - rodPoint);
-            float rodLine = exp(-rodDist * 100.0) * 0.3;
+
+            // Fade at rod ends to prevent abrupt cutoff
+            float endFade = 1.0 - smoothstep(0.7, 1.0, abs(s));
+            float rodLine = exp(-rodDist * 100.0) * 0.3 * endFade;
 
             // Color varies along rod
             float hue = 0.55 + s * 0.1 + i / numRods * 0.15;

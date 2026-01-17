@@ -181,7 +181,11 @@ void main() {
         trail1 = clifford(trail1, a, b, c, d);
         trail2 = dejong(trail2, a2, b2, c2, d2);
 
-        float fade = 1.0 - float(i) / float(trailLength);
+        // Linear fade plus smooth end fade to prevent abrupt cutoff
+        float normalizedPos = float(i) / float(trailLength);
+        float linearFade = 1.0 - normalizedPos;
+        float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedPos);
+        float fade = linearFade * endFade;
 
         // Trail 1 (Clifford)
         float d1 = length(attUV - trail1);

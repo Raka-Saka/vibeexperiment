@@ -107,7 +107,7 @@ void main() {
         float val = 0.8 + beat * 0.2;
         vec3 bobColor = hsv2rgb(vec3(hue, sat, val));
 
-        // Trail
+        // Trail with smooth end fade
         for (float t = 1.0; t < 8.0; t += 1.0) {
             float pastTime = time - t * 0.025;
             float pastSwing = pendulumAngle(i, numPendulums, pastTime, amplitude, baseFreq);
@@ -115,7 +115,9 @@ void main() {
             vec2 pastBobPos = anchor + len * vec2(cos(pastBobAngle), sin(pastBobAngle));
 
             float trailDist = length(uv - pastBobPos);
-            float trailGlow = exp(-trailDist * 40.0) * (1.0 - t / 8.0) * 0.15;
+            float normalizedT = t / 8.0;
+            float endFade = 1.0 - smoothstep(0.6, 1.0, normalizedT);
+            float trailGlow = exp(-trailDist * 40.0) * (1.0 - normalizedT) * endFade * 0.15;
             color += bobColor * trailGlow;
         }
 

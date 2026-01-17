@@ -106,12 +106,15 @@ void main() {
             vec2 pastPos = anchor + len * vec2(sin(pastAngle), -cos(pastAngle));
 
             float trailDist = length(uv - pastPos);
-            float fade = pow(1.0 - t / 25.0, 1.5);  // Smooth exponential fade
-            float trailGlow = exp(-trailDist * 35.0) * fade * 0.12 * pulse;
+            float normalizedT = t / 25.0;
+            float fade = pow(1.0 - normalizedT, 1.5);  // Smooth exponential fade
+            // Extra smooth fade at end to prevent abrupt cutoff
+            float endFade = 1.0 - smoothstep(0.7, 1.0, normalizedT);
+            float trailGlow = exp(-trailDist * 35.0) * fade * endFade * 0.12 * pulse;
 
             // Trail color fades to cooler
             float trailHue = hue + t * 0.008;
-            vec3 trailColor = hsv2rgb(vec3(trailHue, sat * 0.8, val * fade));
+            vec3 trailColor = hsv2rgb(vec3(trailHue, sat * 0.8, val * fade * endFade));
             color += trailColor * trailGlow;
         }
 
