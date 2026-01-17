@@ -8,6 +8,7 @@ import '../../data/media_scanner.dart';
 import 'songs_screen.dart';
 import 'albums_screen.dart';
 import 'artists_screen.dart';
+import 'genres_screen.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_tile.dart';
 
@@ -25,7 +26,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -67,6 +68,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
                     SongsScreen(),
                     AlbumsScreen(),
                     ArtistsScreen(),
+                    GenresScreen(),
                   ],
                 ),
               ),
@@ -163,6 +165,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           Tab(text: 'Songs'),
           Tab(text: 'Albums'),
           Tab(text: 'Artists'),
+          Tab(text: 'Genres'),
         ],
       ),
     ).animate().fadeIn(delay: 100.ms).slideY(begin: -0.2);

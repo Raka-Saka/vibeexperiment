@@ -89,3 +89,21 @@ flutter:
     - shaders/lissajous.frag
     - shaders/neon_rings.frag
     - shaders/aurora.frag
+    - shaders/spirograph.frag
+    - shaders/voronoi.frag
+    - shaders/phyllotaxis.frag
+    - shaders/attractors.frag
+    - shaders/moire.frag
+    - shaders/pendulum.frag
+    - shaders/fractal_flames.frag
+    - shaders/mandelbrot.frag
+    # Pendulum variations
+    - shaders/pendulum_circular.frag
+    - shaders/pendulum_cradle.frag
+    - shaders/pendulum_metronome.frag
+    - shaders/pendulum_double.frag
+    - shaders/pendulum_lissajous.frag
+    - shaders/pendulum_spring.frag
+    - shaders/pendulum_firefly.frag
+    - shaders/pendulum_wave.frag
+    - shaders/pendulum_mirror.frag

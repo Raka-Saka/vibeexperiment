@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.PowerManager
 import android.util.Log
 import io.flutter.plugin.common.EventChannel
 import java.nio.ByteBuffer
@@ -55,6 +56,10 @@ class VibeAudioEngine(private val context: Context) {
     private var hasAudioFocus = false
     private var shouldResumeOnFocusGain = false
     private var previousVolume: Float = 1.0f
+
+    // WakeLock to prevent CPU sleep during background playback
+    private val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
@@ -341,6 +346,9 @@ class VibeAudioEngine(private val context: Context) {
             // Still allow playback, but it may be interrupted
         }
 
+        // Acquire WakeLock to prevent CPU sleep during background playback
+        acquireWakeLock()
+
         Log.d(TAG, "Starting playback")
         isPlaying.set(true)
 
@@ -365,6 +373,10 @@ class VibeAudioEngine(private val context: Context) {
         Log.d(TAG, "Pausing")
         isPlaying.set(false)
         audioTrack?.pause()
+
+        // Release WakeLock when paused (user explicitly paused)
+        releaseWakeLock()
+
         setState(State.PAUSED)
     }
 
@@ -379,6 +391,9 @@ class VibeAudioEngine(private val context: Context) {
         if (!requestAudioFocus()) {
             Log.w(TAG, "Could not obtain audio focus for resume")
         }
+
+        // Re-acquire WakeLock for background playback
+        acquireWakeLock()
 
         Log.d(TAG, "Resuming")
         isPlaying.set(true)
@@ -410,6 +425,9 @@ class VibeAudioEngine(private val context: Context) {
 
         // Abandon audio focus when stopping
         abandonAudioFocus()
+
+        // Release WakeLock when stopped
+        releaseWakeLock()
 
         positionUs.set(0)
         setState(State.STOPPED)
@@ -1047,6 +1065,9 @@ class VibeAudioEngine(private val context: Context) {
         // Abandon audio focus when releasing
         abandonAudioFocus()
 
+        // Release WakeLock when releasing
+        releaseWakeLock()
+
         // Clear any prepared next track
         clearNextTrack()
 
@@ -1392,6 +1413,40 @@ class VibeAudioEngine(private val context: Context) {
 
         hasAudioFocus = false
         shouldResumeOnFocusGain = false
+    }
+
+    //endregion
+
+    //region WakeLock Management
+
+    /**
+     * Acquire WakeLock to prevent CPU sleep during background playback.
+     * This ensures track completion events are delivered and next track starts.
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock == null) {
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "VibePlay::AudioPlayback"
+            )
+        }
+
+        if (wakeLock?.isHeld != true) {
+            // Acquire with timeout of 2 hours max to prevent battery drain
+            // if something goes wrong
+            wakeLock?.acquire(2 * 60 * 60 * 1000L)
+            Log.d(TAG, "WakeLock acquired for background playback")
+        }
+    }
+
+    /**
+     * Release WakeLock when playback stops or pauses
+     */
+    private fun releaseWakeLock() {
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+            Log.d(TAG, "WakeLock released")
+        }
     }
 
     //endregion

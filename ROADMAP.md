@@ -1,8 +1,8 @@
 # VibePlay Roadmap
 
 > **Last Updated:** January 16, 2026
-> **Current Version:** 1.3.0 (Beta)
-> **Status:** Production-hardened, working on UI polish
+> **Current Version:** 1.3.1 (Beta)
+> **Status:** Production-hardened, 13 GPU shader visualizers, Phase 3 complete (smart playlists & statistics)
 
 ---
 
@@ -62,12 +62,20 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] **Custom FFT audio analysis engine** (AudioPulse - 2048-point FFT)
 - [x] 7-band frequency extraction (Sub-bass → Brilliance)
 - [x] Real-time beat detection with BPM estimation
-- [x] **5 GPU shader visualizers:**
+- [x] **13 GPU shader visualizers:**
   - Aurora (Northern Lights)
   - Celestial Halos (Neon Rings)
-  - Resonance (Frequency Spectrum)
-  - Ripples (Water Effect)
+  - Resonance (Cymatics/Chladni patterns)
+  - Ripples (Wave Interference)
   - Harmonograph (Lissajous Curves)
+  - Spirograph (Fourier epicycles)
+  - Voronoi (Flow field cells)
+  - Sunflower (Phyllotaxis spirals)
+  - Attractors (Strange attractors - Lorenz/Clifford)
+  - Moiré (Interference patterns)
+  - Pendulum (Pendulum wave simulation)
+  - Flames (Fractal flames / IFS)
+  - Fractal (Mandelbrot/Julia morphing)
 - [x] Full-screen visualizer mode with auto-hide UI
 - [x] Tap to cycle / long-press to pick visualizer
 
@@ -186,8 +194,8 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 ---
 
-## Phase 3: Smart Playlists & Statistics
-**Priority: High** | Target: v1.3
+## Phase 3: Smart Playlists & Statistics ✅
+**Priority: High** | Target: v1.3 | **Status: Complete**
 
 ### Play Statistics
 - [x] Track play counts per song
@@ -201,12 +209,12 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Recently Added (last 30 days)
 - [x] Heavy Rotation (favorites by completion rate)
 - [x] Rediscover (forgotten songs)
-- [ ] Genre-based auto-playlists
+- [x] Genre-based auto-playlists (Genres tab with grid view)
 
 ### Rule-Based Playlists
-- [ ] Filter by: artist, album, genre, year, play count, rating
-- [ ] Combine rules with AND/OR logic
-- [ ] Auto-update when library changes
+- [x] Filter by: artist, album, genre, year, play count, duration, title
+- [x] Combine rules with AND/OR logic
+- [x] Auto-update when library changes
 
 ---
 
@@ -350,7 +358,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - Standard equalizer
 - Sleep timer, shuffle, repeat
 
-### v1.1 - Audio Enhancement ✅ (Current)
+### v1.1 - Audio Enhancement ✅
 - Custom VibeAudioEngine
 - 10-band hardware EQ
 - Gapless playback + Crossfade
@@ -372,6 +380,17 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Smart playlists
 - [x] Custom EQ presets
 - [x] EQ persistence across app restarts
+
+### v1.3.1 - Visualizer Expansion & Smart Playlists ✅ (Current)
+- [x] 8 new GPU shader visualizers (total: 13)
+  - Spirograph, Voronoi, Sunflower, Attractors
+  - Moiré, Pendulum, Flames, Fractal
+- [x] Pitch shifting for VibeEngine (Sonic algorithm)
+- [x] Battery optimization (pause visualizer when app in background)
+- [x] Genre-based playlists with new Genres tab in Library
+- [x] Rule-based smart playlists with AND/OR logic
+  - Filter by artist, album, genre, year, play count, duration, title
+  - Create/edit/delete rule-based playlists from Statistics screen
 
 ### v1.4 - Connectivity
 - [ ] Android Auto

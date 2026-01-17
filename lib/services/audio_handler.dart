@@ -1472,8 +1472,12 @@ Future<void> initAudioService() async {
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.vibeplay.vibeplay.audio',
       androidNotificationChannelName: 'VibePlay Audio',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      // androidNotificationOngoing has no effect when androidStopForegroundOnPause is false
+      // (notification is always ongoing in that case)
+      androidNotificationOngoing: false,
+      // Keep foreground notification visible even when paused to prevent
+      // Android from killing the service during screen-off background playback
+      androidStopForegroundOnPause: false,
       androidShowNotificationBadge: true,
       notificationColor: Color(0xFF6366F1),
       androidNotificationIcon: 'drawable/ic_notification',

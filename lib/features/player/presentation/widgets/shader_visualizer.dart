@@ -9,11 +9,29 @@ import '../../../../services/log_service.dart';
 
 /// Available shader visualizer types
 enum ShaderVisualizerType {
-  resonance,    // Cymatics-based, Chladni patterns
-  ripples,      // Wave interference, water ripples
-  lissajous,    // Lissajous curves / harmonograph
-  neonRings,    // Celestial Halos
-  aurora,       // Northern lights / Aurora Borealis
+  resonance,          // Cymatics-based, Chladni patterns
+  ripples,            // Wave interference, water ripples
+  lissajous,          // Lissajous curves / harmonograph
+  neonRings,          // Celestial Halos
+  aurora,             // Northern lights / Aurora Borealis
+  spirograph,         // Spirograph epicycles / Fourier patterns
+  voronoi,            // Voronoi flow fields
+  phyllotaxis,        // Sunflower spirals / Golden angle
+  attractors,         // Strange attractors (Lorenz, Clifford)
+  moire,              // Moiré interference patterns
+  pendulum,           // Pendulum waves
+  fractalFlames,      // Fractal flames / IFS
+  mandelbrot,         // Mandelbrot/Julia set morphing
+  // Pendulum variations
+  pendulumCircular,   // Radial starburst pendulums
+  pendulumCradle,     // Newton's cradle
+  pendulumMetronome,  // Inverted metronomes
+  pendulumDouble,     // Chaotic double pendulum
+  pendulumLissajous,  // 2D sand pendulum / Lissajous
+  pendulumSpring,     // Spring/bouncy pendulums
+  pendulumFirefly,    // Glowing particle pendulums
+  pendulumWave,       // Wave machine
+  pendulumMirror,     // Mirrored reflection pendulums
 }
 
 /// Provider for shader programs - loads them once and caches
@@ -53,6 +71,117 @@ final shaderProgramsProvider = FutureProvider<Map<ShaderVisualizerType, ui.Fragm
     programs[ShaderVisualizerType.aurora] = await ui.FragmentProgram.fromAsset('shaders/aurora.frag');
   } catch (e) {
     Log.ui.d('Failed to load aurora shader: $e');
+  }
+
+  // Load Spirograph shader (Epicycles)
+  try {
+    programs[ShaderVisualizerType.spirograph] = await ui.FragmentProgram.fromAsset('shaders/spirograph.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load spirograph shader: $e');
+  }
+
+  // Load Voronoi shader (Flow Fields)
+  try {
+    programs[ShaderVisualizerType.voronoi] = await ui.FragmentProgram.fromAsset('shaders/voronoi.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load voronoi shader: $e');
+  }
+
+  // Load Phyllotaxis shader (Sunflower Spirals)
+  try {
+    programs[ShaderVisualizerType.phyllotaxis] = await ui.FragmentProgram.fromAsset('shaders/phyllotaxis.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load phyllotaxis shader: $e');
+  }
+
+  // Load Attractors shader (Strange Attractors)
+  try {
+    programs[ShaderVisualizerType.attractors] = await ui.FragmentProgram.fromAsset('shaders/attractors.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load attractors shader: $e');
+  }
+
+  // Load Moire shader (Interference Patterns)
+  try {
+    programs[ShaderVisualizerType.moire] = await ui.FragmentProgram.fromAsset('shaders/moire.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load moire shader: $e');
+  }
+
+  // Load Pendulum shader (Pendulum Waves)
+  try {
+    programs[ShaderVisualizerType.pendulum] = await ui.FragmentProgram.fromAsset('shaders/pendulum.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum shader: $e');
+  }
+
+  // Load Fractal Flames shader
+  try {
+    programs[ShaderVisualizerType.fractalFlames] = await ui.FragmentProgram.fromAsset('shaders/fractal_flames.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load fractal_flames shader: $e');
+  }
+
+  // Load Mandelbrot shader (Julia/Mandelbrot Sets)
+  try {
+    programs[ShaderVisualizerType.mandelbrot] = await ui.FragmentProgram.fromAsset('shaders/mandelbrot.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load mandelbrot shader: $e');
+  }
+
+  // Pendulum variations
+  try {
+    programs[ShaderVisualizerType.pendulumCircular] = await ui.FragmentProgram.fromAsset('shaders/pendulum_circular.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_circular shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumCradle] = await ui.FragmentProgram.fromAsset('shaders/pendulum_cradle.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_cradle shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumMetronome] = await ui.FragmentProgram.fromAsset('shaders/pendulum_metronome.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_metronome shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumDouble] = await ui.FragmentProgram.fromAsset('shaders/pendulum_double.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_double shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumLissajous] = await ui.FragmentProgram.fromAsset('shaders/pendulum_lissajous.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_lissajous shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumSpring] = await ui.FragmentProgram.fromAsset('shaders/pendulum_spring.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_spring shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumFirefly] = await ui.FragmentProgram.fromAsset('shaders/pendulum_firefly.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_firefly shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumWave] = await ui.FragmentProgram.fromAsset('shaders/pendulum_wave.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_wave shader: $e');
+  }
+
+  try {
+    programs[ShaderVisualizerType.pendulumMirror] = await ui.FragmentProgram.fromAsset('shaders/pendulum_mirror.frag');
+  } catch (e) {
+    Log.ui.d('Failed to load pendulum_mirror shader: $e');
   }
 
   return programs;
@@ -428,6 +557,41 @@ extension ShaderVisualizerTypeExtension on ShaderVisualizerType {
         return 'Celestial Halos';
       case ShaderVisualizerType.aurora:
         return 'Aurora';
+      case ShaderVisualizerType.spirograph:
+        return 'Spirograph';
+      case ShaderVisualizerType.voronoi:
+        return 'Voronoi';
+      case ShaderVisualizerType.phyllotaxis:
+        return 'Sunflower';
+      case ShaderVisualizerType.attractors:
+        return 'Attractors';
+      case ShaderVisualizerType.moire:
+        return 'Moiré';
+      case ShaderVisualizerType.pendulum:
+        return 'Pendulum';
+      case ShaderVisualizerType.fractalFlames:
+        return 'Flames';
+      case ShaderVisualizerType.mandelbrot:
+        return 'Fractal';
+      // Pendulum variations
+      case ShaderVisualizerType.pendulumCircular:
+        return 'Circular Pendulum';
+      case ShaderVisualizerType.pendulumCradle:
+        return 'Newton\'s Cradle';
+      case ShaderVisualizerType.pendulumMetronome:
+        return 'Metronome';
+      case ShaderVisualizerType.pendulumDouble:
+        return 'Double Pendulum';
+      case ShaderVisualizerType.pendulumLissajous:
+        return 'Sand Pendulum';
+      case ShaderVisualizerType.pendulumSpring:
+        return 'Spring Pendulum';
+      case ShaderVisualizerType.pendulumFirefly:
+        return 'Firefly';
+      case ShaderVisualizerType.pendulumWave:
+        return 'Wave Machine';
+      case ShaderVisualizerType.pendulumMirror:
+        return 'Mirror Pendulum';
     }
   }
 
@@ -443,6 +607,41 @@ extension ShaderVisualizerTypeExtension on ShaderVisualizerType {
         return Icons.lens_blur_rounded;
       case ShaderVisualizerType.aurora:
         return Icons.nights_stay_rounded;
+      case ShaderVisualizerType.spirograph:
+        return Icons.motion_photos_on_rounded;
+      case ShaderVisualizerType.voronoi:
+        return Icons.blur_on_rounded;
+      case ShaderVisualizerType.phyllotaxis:
+        return Icons.local_florist_rounded;
+      case ShaderVisualizerType.attractors:
+        return Icons.all_inclusive_rounded;
+      case ShaderVisualizerType.moire:
+        return Icons.blur_circular_rounded;
+      case ShaderVisualizerType.pendulum:
+        return Icons.swap_vert_rounded;
+      case ShaderVisualizerType.fractalFlames:
+        return Icons.local_fire_department_rounded;
+      case ShaderVisualizerType.mandelbrot:
+        return Icons.auto_awesome_rounded;
+      // Pendulum variations
+      case ShaderVisualizerType.pendulumCircular:
+        return Icons.radio_button_unchecked_rounded;
+      case ShaderVisualizerType.pendulumCradle:
+        return Icons.sports_baseball_rounded;
+      case ShaderVisualizerType.pendulumMetronome:
+        return Icons.timer_rounded;
+      case ShaderVisualizerType.pendulumDouble:
+        return Icons.link_rounded;
+      case ShaderVisualizerType.pendulumLissajous:
+        return Icons.beach_access_rounded;
+      case ShaderVisualizerType.pendulumSpring:
+        return Icons.expand_rounded;
+      case ShaderVisualizerType.pendulumFirefly:
+        return Icons.auto_awesome_rounded;
+      case ShaderVisualizerType.pendulumWave:
+        return Icons.waves_rounded;
+      case ShaderVisualizerType.pendulumMirror:
+        return Icons.flip_rounded;
     }
   }
 }

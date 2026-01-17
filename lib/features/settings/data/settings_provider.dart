@@ -18,6 +18,24 @@ enum VisualizerStyleSetting {
   lissajous,      // Harmonograph curves
   neonRings,      // Celestial Halos
   aurora,         // Northern lights / Aurora Borealis
+  spirograph,     // Spirograph epicycles
+  voronoi,        // Voronoi flow fields
+  phyllotaxis,    // Sunflower spirals
+  attractors,     // Strange attractors
+  moire,          // Moiré patterns
+  pendulum,       // Pendulum waves
+  fractalFlames,  // Fractal flames
+  mandelbrot,     // Mandelbrot/Julia sets
+  // Pendulum variations
+  pendulumCircular,   // Radial starburst pendulums
+  pendulumCradle,     // Newton's cradle
+  pendulumMetronome,  // Inverted metronomes
+  pendulumDouble,     // Chaotic double pendulum
+  pendulumLissajous,  // 2D sand pendulum / Lissajous
+  pendulumSpring,     // Spring/bouncy pendulums
+  pendulumFirefly,    // Glowing particle pendulums
+  pendulumWave,       // Wave machine
+  pendulumMirror,     // Mirrored reflection pendulums
 }
 
 class AppSettings {
@@ -238,6 +256,41 @@ class AppSettings {
         return 'Celestial Halos';
       case VisualizerStyleSetting.aurora:
         return 'Aurora';
+      case VisualizerStyleSetting.spirograph:
+        return 'Spirograph';
+      case VisualizerStyleSetting.voronoi:
+        return 'Voronoi';
+      case VisualizerStyleSetting.phyllotaxis:
+        return 'Sunflower';
+      case VisualizerStyleSetting.attractors:
+        return 'Attractors';
+      case VisualizerStyleSetting.moire:
+        return 'Moiré';
+      case VisualizerStyleSetting.pendulum:
+        return 'Pendulum';
+      case VisualizerStyleSetting.fractalFlames:
+        return 'Flames';
+      case VisualizerStyleSetting.mandelbrot:
+        return 'Fractal';
+      // Pendulum variations
+      case VisualizerStyleSetting.pendulumCircular:
+        return 'Circular Pendulum';
+      case VisualizerStyleSetting.pendulumCradle:
+        return 'Newton\'s Cradle';
+      case VisualizerStyleSetting.pendulumMetronome:
+        return 'Metronome';
+      case VisualizerStyleSetting.pendulumDouble:
+        return 'Double Pendulum';
+      case VisualizerStyleSetting.pendulumLissajous:
+        return 'Sand Pendulum';
+      case VisualizerStyleSetting.pendulumSpring:
+        return 'Spring Pendulum';
+      case VisualizerStyleSetting.pendulumFirefly:
+        return 'Firefly';
+      case VisualizerStyleSetting.pendulumWave:
+        return 'Wave Machine';
+      case VisualizerStyleSetting.pendulumMirror:
+        return 'Mirror Pendulum';
     }
   }
 

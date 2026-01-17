@@ -1,4 +1,4 @@
-they are ewither redundant or not# Math-Based Audio Visualizer Ideas
+# Math-Based Audio Visualizer Ideas
 
 This document describes mathematically-grounded visualizations that can be implemented as fragment shaders, similar to the Cymatics/Chladni pattern-based "Resonance" visualizer.
 
@@ -257,17 +257,29 @@ next_state = rule(current_state, neighbors)
 
 ---
 
-## Implementation Priority
+## Implementation Status
 
-Based on visual impact and audio responsiveness:
+All visualizers have been implemented as GLSL fragment shaders:
 
-1. **Lissajous** - Simple, elegant, highly responsive
-2. **Wave Interference** - Intuitive audio mapping
-3. **Spirograph** - Beautiful trails, natural frequency mapping
-4. **Voronoi** - Organic, modern look
-5. **Phyllotaxis** - Natural beauty, easy to implement
+| Visualizer | File | Status |
+|------------|------|--------|
+| Cymatics/Chladni | `resonance.frag` | Implemented |
+| Lissajous | `lissajous.frag` | Implemented |
+| Wave Interference | `ripples.frag` | Implemented |
+| Spirograph | `spirograph.frag` | Implemented |
+| Voronoi | `voronoi.frag` | Implemented |
+| Phyllotaxis | `phyllotaxis.frag` | Implemented |
+| Strange Attractors | `attractors.frag` | Implemented |
+| Reaction-Diffusion | - | Not implemented (requires multi-pass rendering) |
+| Fractal Flames | `fractal_flames.frag` | Implemented |
+| Pendulum Waves | `pendulum.frag` | Implemented |
+| Moiré Patterns | `moire.frag` | Implemented |
+| Mandelbrot/Julia | `mandelbrot.frag` | Implemented |
+| Cellular Automata | - | Not implemented (requires state texture) |
+| Aurora | `aurora.frag` | Implemented |
+| Neon Rings | `neon_rings.frag` | Implemented |
 
-Each can be implemented as a GLSL fragment shader following the same pattern as `resonance.frag`.
+Note: Reaction-Diffusion and Cellular Automata require multi-pass rendering with state textures, which is more complex to implement in Flutter's single-pass shader system.
 
 ---
 

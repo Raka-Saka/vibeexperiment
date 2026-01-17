@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../services/play_statistics_service.dart';
 import '../../../services/smart_playlist_service.dart';
+import '../../../services/rule_playlist_service.dart';
 import '../../../shared/models/song.dart';
+import '../../../shared/models/playlist_rule.dart';
 import '../../library/data/media_scanner.dart';
 import '../../library/presentation/widgets/song_tile.dart';
 import '../../player/data/player_provider.dart';
+import '../../playlists/presentation/screens/rule_playlist_screen.dart';
 
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
@@ -60,6 +63,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
           // Smart Playlists
           _buildSmartPlaylistsSection(songs),
+          const SizedBox(height: 24),
+
+          // Rule-Based Playlists
+          _buildRulePlaylistsSection(songs),
         ],
       ),
     );
@@ -358,6 +365,158 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     } else {
       return '0m';
     }
+  }
+
+  Widget _buildRulePlaylistsSection(List<Song> songs) {
+    final rulePlaylists = ref.watch(rulePlaylistServiceProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Rule-Based Playlists',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const RulePlaylistsScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppTheme.primaryColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (rulePlaylists.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppTheme.darkCard,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 48,
+                  color: AppTheme.textMuted,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No rule-based playlists yet',
+                  style: TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Create playlists that automatically update based on rules like artist, genre, play count, and more.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppTheme.textMuted.withOpacity(0.7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          ...rulePlaylists.map((playlist) => _buildRulePlaylistTile(playlist, songs)),
+      ],
+    );
+  }
+
+  Widget _buildRulePlaylistTile(RuleBasedPlaylist playlist, List<Song> songs) {
+    return FutureBuilder<List<Song>>(
+      future: ref.read(rulePlaylistServiceProvider.notifier).generateSongs(playlist, songs),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        final hasContent = count > 0;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: AppTheme.darkCard,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: ListTile(
+            leading: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: hasContent
+                    ? AppTheme.secondaryColor.withOpacity(0.2)
+                    : AppTheme.darkSurface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                Icons.auto_awesome_rounded,
+                color: hasContent ? AppTheme.secondaryColor : AppTheme.textMuted,
+                size: 22,
+              ),
+            ),
+            title: Text(
+              playlist.name,
+              style: TextStyle(
+                color: hasContent ? AppTheme.textPrimary : AppTheme.textMuted,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            subtitle: Text(
+              '${playlist.rules.length} rule${playlist.rules.length == 1 ? '' : 's'} · ${playlist.logic == RuleLogic.and ? 'Match all' : 'Match any'}',
+              style: TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 12,
+              ),
+            ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: hasContent
+                    ? AppTheme.secondaryColor.withOpacity(0.1)
+                    : AppTheme.darkSurface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      '$count',
+                      style: TextStyle(
+                        color: hasContent ? AppTheme.secondaryColor : AppTheme.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RulePlaylistDetailScreen(
+                    playlist: playlist,
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
 

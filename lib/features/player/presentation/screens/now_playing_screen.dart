@@ -25,7 +25,7 @@ class NowPlayingScreen extends ConsumerStatefulWidget {
 }
 
 class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _rotationController;
   DynamicColors _colors = DynamicColors.defaultColors();
 
@@ -34,9 +34,13 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
   Timer? _hideTimer;
   static const _hideDelay = Duration(seconds: 4);
 
+  // Lifecycle tracking for battery optimization
+  bool _isAppInForeground = true;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _rotationController = AnimationController(
       duration: const Duration(seconds: 20),
       vsync: this,
@@ -46,9 +50,21 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _hideTimer?.cancel();
     _rotationController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause visualizer when app goes to background to save battery
+    final wasInForeground = _isAppInForeground;
+    _isAppInForeground = state == AppLifecycleState.resumed;
+
+    if (wasInForeground != _isAppInForeground && mounted) {
+      setState(() {});
+    }
   }
 
   void _startHideTimer() {
@@ -118,7 +134,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
             // Background layer - either shader or gradient
             if (isShaderBg)
               // Full-screen shader visualizer background
-              _buildShaderBackground(playerState.isPlaying, settings.visualizerStyle)
+              // Only run visualizer when playing AND app is in foreground (battery optimization)
+              _buildShaderBackground(playerState.isPlaying && _isAppInForeground, settings.visualizerStyle)
             else ...[
               // Animated gradient background
               AnimatedContainer(
@@ -236,6 +253,24 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
       VisualizerStyleSetting.lissajous => ShaderVisualizerType.lissajous,
       VisualizerStyleSetting.neonRings => ShaderVisualizerType.neonRings,
       VisualizerStyleSetting.aurora => ShaderVisualizerType.aurora,
+      VisualizerStyleSetting.spirograph => ShaderVisualizerType.spirograph,
+      VisualizerStyleSetting.voronoi => ShaderVisualizerType.voronoi,
+      VisualizerStyleSetting.phyllotaxis => ShaderVisualizerType.phyllotaxis,
+      VisualizerStyleSetting.attractors => ShaderVisualizerType.attractors,
+      VisualizerStyleSetting.moire => ShaderVisualizerType.moire,
+      VisualizerStyleSetting.pendulum => ShaderVisualizerType.pendulum,
+      VisualizerStyleSetting.fractalFlames => ShaderVisualizerType.fractalFlames,
+      VisualizerStyleSetting.mandelbrot => ShaderVisualizerType.mandelbrot,
+      // Pendulum variations
+      VisualizerStyleSetting.pendulumCircular => ShaderVisualizerType.pendulumCircular,
+      VisualizerStyleSetting.pendulumCradle => ShaderVisualizerType.pendulumCradle,
+      VisualizerStyleSetting.pendulumMetronome => ShaderVisualizerType.pendulumMetronome,
+      VisualizerStyleSetting.pendulumDouble => ShaderVisualizerType.pendulumDouble,
+      VisualizerStyleSetting.pendulumLissajous => ShaderVisualizerType.pendulumLissajous,
+      VisualizerStyleSetting.pendulumSpring => ShaderVisualizerType.pendulumSpring,
+      VisualizerStyleSetting.pendulumFirefly => ShaderVisualizerType.pendulumFirefly,
+      VisualizerStyleSetting.pendulumWave => ShaderVisualizerType.pendulumWave,
+      VisualizerStyleSetting.pendulumMirror => ShaderVisualizerType.pendulumMirror,
     };
 
     return ShaderVisualizer(
@@ -277,13 +312,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     if (!mounted) return;
 
     // All visualizer styles (GPU shader-based)
-    final visualizerStyles = [
-      VisualizerStyleSetting.resonance,
-      VisualizerStyleSetting.ripples,
-      VisualizerStyleSetting.lissajous,
-      VisualizerStyleSetting.neonRings,
-      VisualizerStyleSetting.aurora,
-    ];
+    final visualizerStyles = VisualizerStyleSetting.values;
 
     IconData getIcon(VisualizerStyleSetting style) {
       return switch (style) {
@@ -292,6 +321,24 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         VisualizerStyleSetting.lissajous => Icons.show_chart_rounded,
         VisualizerStyleSetting.neonRings => Icons.lens_blur_rounded,
         VisualizerStyleSetting.aurora => Icons.nights_stay_rounded,
+        VisualizerStyleSetting.spirograph => Icons.motion_photos_on_rounded,
+        VisualizerStyleSetting.voronoi => Icons.blur_on_rounded,
+        VisualizerStyleSetting.phyllotaxis => Icons.local_florist_rounded,
+        VisualizerStyleSetting.attractors => Icons.all_inclusive_rounded,
+        VisualizerStyleSetting.moire => Icons.blur_circular_rounded,
+        VisualizerStyleSetting.pendulum => Icons.swap_vert_rounded,
+        VisualizerStyleSetting.fractalFlames => Icons.local_fire_department_rounded,
+        VisualizerStyleSetting.mandelbrot => Icons.auto_awesome_rounded,
+        // Pendulum variations
+        VisualizerStyleSetting.pendulumCircular => Icons.radio_button_unchecked_rounded,
+        VisualizerStyleSetting.pendulumCradle => Icons.sports_baseball_rounded,
+        VisualizerStyleSetting.pendulumMetronome => Icons.timer_rounded,
+        VisualizerStyleSetting.pendulumDouble => Icons.link_rounded,
+        VisualizerStyleSetting.pendulumLissajous => Icons.beach_access_rounded,
+        VisualizerStyleSetting.pendulumSpring => Icons.expand_rounded,
+        VisualizerStyleSetting.pendulumFirefly => Icons.auto_awesome_rounded,
+        VisualizerStyleSetting.pendulumWave => Icons.waves_rounded,
+        VisualizerStyleSetting.pendulumMirror => Icons.flip_rounded,
       };
     }
 
@@ -302,6 +349,24 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         VisualizerStyleSetting.lissajous => 'Harmonograph',
         VisualizerStyleSetting.neonRings => 'Celestial Halos',
         VisualizerStyleSetting.aurora => 'Aurora',
+        VisualizerStyleSetting.spirograph => 'Spirograph',
+        VisualizerStyleSetting.voronoi => 'Voronoi',
+        VisualizerStyleSetting.phyllotaxis => 'Sunflower',
+        VisualizerStyleSetting.attractors => 'Attractors',
+        VisualizerStyleSetting.moire => 'Moiré',
+        VisualizerStyleSetting.pendulum => 'Pendulum',
+        VisualizerStyleSetting.fractalFlames => 'Flames',
+        VisualizerStyleSetting.mandelbrot => 'Fractal',
+        // Pendulum variations
+        VisualizerStyleSetting.pendulumCircular => 'Circular',
+        VisualizerStyleSetting.pendulumCradle => 'Newton\'s Cradle',
+        VisualizerStyleSetting.pendulumMetronome => 'Metronome',
+        VisualizerStyleSetting.pendulumDouble => 'Double',
+        VisualizerStyleSetting.pendulumLissajous => 'Sand',
+        VisualizerStyleSetting.pendulumSpring => 'Spring',
+        VisualizerStyleSetting.pendulumFirefly => 'Firefly',
+        VisualizerStyleSetting.pendulumWave => 'Wave',
+        VisualizerStyleSetting.pendulumMirror => 'Mirror',
       };
     }
 

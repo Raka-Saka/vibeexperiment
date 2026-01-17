@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../../shared/models/song.dart';
 import '../../../shared/models/album.dart';
 import '../../../shared/models/artist.dart';
+import '../../../shared/models/genre.dart';
 import '../../settings/data/settings_provider.dart';
 import '../../../services/log_service.dart';
 
@@ -418,6 +419,50 @@ final albumsProvider = FutureProvider<List<Album>>((ref) async {
 final artistsProvider = FutureProvider<List<Artist>>((ref) async {
   final scanner = ref.read(mediaScannerProvider);
   return scanner.queryArtists();
+});
+
+/// Provider for all genres extracted from the music library
+final genresProvider = FutureProvider<List<Genre>>((ref) async {
+  final songsAsync = await ref.watch(songsProvider.future);
+
+  // Group songs by genre
+  final genreMap = <String, List<int>>{};
+  for (final song in songsAsync) {
+    final genre = song.genre?.trim();
+    if (genre != null && genre.isNotEmpty) {
+      genreMap.putIfAbsent(genre, () => []).add(song.id);
+    } else {
+      genreMap.putIfAbsent('Unknown', () => []).add(song.id);
+    }
+  }
+
+  // Convert to Genre objects and sort by song count (descending)
+  final genres = genreMap.entries.map((entry) {
+    return Genre(
+      name: entry.key,
+      songCount: entry.value.length,
+      songIds: entry.value,
+    );
+  }).toList();
+
+  genres.sort((a, b) => b.songCount.compareTo(a.songCount));
+
+  return genres;
+});
+
+/// Provider for songs in a specific genre
+final songsByGenreProvider = FutureProvider.family<List<Song>, String>((ref, genreName) async {
+  final songsAsync = await ref.watch(songsProvider.future);
+
+  if (genreName == 'Unknown') {
+    return songsAsync.where((song) =>
+      song.genre == null || song.genre!.trim().isEmpty
+    ).toList();
+  }
+
+  return songsAsync.where((song) =>
+    song.genre?.trim() == genreName
+  ).toList();
 });
 
 final songsByAlbumProvider = FutureProvider.family<List<Song>, int>((ref, albumId) async {
