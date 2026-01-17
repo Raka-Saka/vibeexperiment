@@ -135,7 +135,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     }
 
     final settings = ref.watch(settingsProvider);
-    final isShaderBg = settings.isShaderVisualizer;
+    // Show shader only when visualizer is enabled (for battery saving)
+    final showShaderVisualizer = settings.visualizerEnabled && settings.isShaderVisualizer;
 
     return GestureDetector(
       onTap: _showUI,
@@ -145,8 +146,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
         body: Stack(
           fit: StackFit.expand,
           children: [
-            // Background layer - either shader or gradient
-            if (isShaderBg)
+            // Background layer - shader (when enabled) or static gradient (battery saver)
+            if (showShaderVisualizer)
               // Full-screen shader visualizer background
               // Only run visualizer when playing AND app is in foreground (battery optimization)
               _buildShaderBackground(playerState.isPlaying && _isAppInForeground, settings.visualizerStyle)
@@ -168,7 +169,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
             ],
 
             // Dark overlay for readability when shader is active - fades with UI
-            if (isShaderBg)
+            if (showShaderVisualizer)
               AnimatedOpacity(
                 opacity: _uiVisible ? 0.25 : 0.0,
                 duration: const Duration(milliseconds: 400),

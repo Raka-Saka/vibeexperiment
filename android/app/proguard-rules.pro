@@ -57,6 +57,14 @@
 # Android DynamicsProcessing (for equalizer)
 -keep class android.media.audiofx.** { *; }
 
+# TensorFlow Lite - required for ML genre classification
+-keep class org.tensorflow.** { *; }
+-keep class org.tensorflow.lite.** { *; }
+-keepclasseswithmembers class * {
+    native <methods>;
+}
+-dontwarn org.tensorflow.**
+
 # Keep enums
 -keepclassmembers enum * {
     public static **[] values();

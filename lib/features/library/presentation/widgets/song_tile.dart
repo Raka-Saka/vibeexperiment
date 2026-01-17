@@ -8,6 +8,7 @@ import '../../../../services/play_statistics_service.dart';
 import '../../../player/data/player_provider.dart';
 import '../../../youtube/presentation/youtube_upload_screen.dart';
 import '../../data/media_scanner.dart';
+import '../../data/file_deletion_service.dart';
 
 class SongTile extends ConsumerWidget {
   final Song song;
@@ -146,6 +147,17 @@ class SongTile extends ConsumerWidget {
                 ],
               ),
             ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline_rounded, size: 20, color: Colors.red),
+                  SizedBox(width: 12),
+                  Text('Delete from Device', style: TextStyle(color: Colors.red)),
+                ],
+              ),
+            ),
           ],
           onSelected: (value) {
             if (value == 'youtube_upload') {
@@ -155,6 +167,8 @@ class SongTile extends ConsumerWidget {
                   builder: (context) => YouTubeUploadScreen(song: song),
                 ),
               );
+            } else if (value == 'delete') {
+              _showDeleteConfirmation(context, ref, song);
             } else {
               handleSongMenuAction(context, ref, song, value);
             }
@@ -263,4 +277,72 @@ class SongTile extends ConsumerWidget {
       ],
     );
   }
+}
+
+void _showDeleteConfirmation(BuildContext context, WidgetRef ref, Song song) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppTheme.darkCard,
+      title: const Text('Delete Song'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Are you sure you want to delete this song from your device?'),
+          const SizedBox(height: 12),
+          Text(
+            song.title,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text(
+            song.artistDisplay,
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'This action cannot be undone.',
+            style: TextStyle(color: Colors.red.shade300, fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton.icon(
+          onPressed: () async {
+            Navigator.pop(context);
+            final deletionService = ref.read(fileDeletionServiceProvider);
+            final result = await deletionService.deleteSong(song);
+
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    result.success
+                        ? '${song.title} deleted'
+                        : 'Failed to delete: ${result.error}',
+                  ),
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+
+              if (result.success) {
+                // Refresh the library
+                ref.invalidate(songsProvider);
+              }
+            }
+          },
+          icon: const Icon(Icons.delete, size: 18),
+          label: const Text('Delete'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    ),
+  );
 }

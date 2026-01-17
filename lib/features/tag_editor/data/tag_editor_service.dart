@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:id3_codec/id3_codec.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +11,72 @@ import '../../../services/log_service.dart';
 /// Service for reading and writing audio file tags
 /// Supports MP3 files (ID3v1, ID3v2.3, ID3v2.4)
 class TagEditorService {
+  static const _fileOpsChannel = MethodChannel('com.vibeplay/file_operations');
+
+  /// Check if the app has permission to manage all files (Android 11+)
+  static Future<bool> hasManageStoragePermission() async {
+    try {
+      final result = await _fileOpsChannel.invokeMethod<bool>('hasManageStoragePermission');
+      return result ?? false;
+    } catch (e) {
+      Log.d('TagEditorService: Error checking permission: $e');
+      return true; // Assume we have permission on error (older Android)
+    }
+  }
+
+  /// Open system settings to grant manage storage permission
+  static Future<bool> openManageStorageSettings() async {
+    try {
+      final result = await _fileOpsChannel.invokeMethod<bool>('openManageStorageSettings');
+      return result ?? false;
+    } catch (e) {
+      Log.d('TagEditorService: Error opening settings: $e');
+      return false;
+    }
+  }
+
+  /// Write bytes to a file, using native MediaStore on Android 10+ if needed
+  Future<bool> _writeFileBytes(String filePath, Uint8List bytes) async {
+    // Try direct file write first
+    try {
+      final file = File(filePath);
+      await file.writeAsBytes(bytes, flush: true);
+      return true;
+    } catch (e) {
+      Log.d('TagEditorService: Direct write failed, trying native: $e');
+    }
+
+    // Fall back to native MediaStore-based writing
+    // Write to temp file first to avoid large byte array transfer through platform channel
+    try {
+      final cacheDir = await getTemporaryDirectory();
+      final tempPath = '${cacheDir.path}/tag_write_temp_${DateTime.now().millisecondsSinceEpoch}.tmp';
+      final tempFile = File(tempPath);
+      await tempFile.writeAsBytes(bytes, flush: true);
+      Log.d('TagEditorService: Wrote temp file for native copy: $tempPath');
+
+      final result = await _fileOpsChannel.invokeMethod<bool>('copyFileToMediaStore', {
+        'sourcePath': tempPath,
+        'targetPath': filePath,
+      });
+
+      // Clean up temp file
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+
+      if (result == true) {
+        Log.d('TagEditorService: Native MediaStore copy succeeded');
+        return true;
+      } else {
+        Log.d('TagEditorService: Native MediaStore copy failed');
+        return false;
+      }
+    } catch (e) {
+      Log.d('TagEditorService: Native write failed: $e');
+      return false;
+    }
+  }
   /// Supported file extensions (MP3 only for now)
   static const supportedExtensions = ['mp3'];
 
@@ -465,9 +532,17 @@ class TagEditorService {
         }
 
         // Now copy the temp file content to the original file
-        // This approach works better with Android storage permissions
+        // Use native MediaStore on Android 10+ if needed
         final tempBytes = await tempFile.readAsBytes();
-        await file.writeAsBytes(tempBytes, flush: true);
+        final writeSuccess = await _writeFileBytes(filePath, tempBytes);
+        if (!writeSuccess) {
+          await tempFile.delete();
+          return TagWriteResult(
+            success: false,
+            error: 'Failed to write to original file',
+            filePath: filePath,
+          );
+        }
         Log.d('TagEditorService: Copied temp file to original location');
 
         // Clean up temp file
@@ -796,8 +871,15 @@ class TagEditorService {
 
       Log.d('TagEditorService: Removed $removedCount URL frames, new size: ${resultBytes.length}');
 
-      // Write back
-      await file.writeAsBytes(resultBytes, flush: true);
+      // Write back using native method if needed
+      final writeSuccess = await _writeFileBytes(filePath, resultBytes);
+      if (!writeSuccess) {
+        return TagWriteResult(
+          success: false,
+          error: 'Failed to write file',
+          filePath: filePath,
+        );
+      }
 
       return TagWriteResult(
         success: true,
@@ -818,6 +900,221 @@ class TagEditorService {
     final results = <TagWriteResult>[];
     for (final path in filePaths) {
       results.add(await removeUrlFrames(path));
+    }
+    return results;
+  }
+
+  /// Remove comment frames (COMM and TXXX with COMM description) from an audio file
+  /// This strips all comment data from the ID3v2 header, including Suno metadata
+  Future<TagWriteResult> removeCommentFrames(String filePath) async {
+    if (!isFormatSupported(filePath)) {
+      return TagWriteResult(
+        success: false,
+        error: 'Only MP3 files are supported',
+        filePath: filePath,
+      );
+    }
+
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        return TagWriteResult(
+          success: false,
+          error: 'File not found',
+          filePath: filePath,
+        );
+      }
+
+      final bytes = await file.readAsBytes();
+
+      // Check for ID3v2 header
+      if (bytes.length < 10 || bytes[0] != 0x49 || bytes[1] != 0x44 || bytes[2] != 0x33) {
+        return TagWriteResult(
+          success: true, // No ID3v2 header means no comments to remove
+          filePath: filePath,
+        );
+      }
+
+      // Parse ID3v2 header
+      final majorVersion = bytes[3];
+      final flags = bytes[5];
+      final hasExtendedHeader = (flags & 0x40) != 0;
+
+      // Calculate ID3v2 tag size (syncsafe integer)
+      final tagSize = ((bytes[6] & 0x7F) << 21) |
+          ((bytes[7] & 0x7F) << 14) |
+          ((bytes[8] & 0x7F) << 7) |
+          (bytes[9] & 0x7F);
+
+      Log.d('TagEditorService: Removing comments - ID3v2.$majorVersion, tag size: $tagSize');
+
+      // Comment frame IDs to remove directly
+      final commentFrameIds = ['COMM'];
+
+      int pos = 10;
+      if (hasExtendedHeader && majorVersion >= 3) {
+        // Skip extended header
+        final extSize = (bytes[10] << 24) | (bytes[11] << 16) | (bytes[12] << 8) | bytes[13];
+        pos += 4 + extSize;
+      }
+
+      // Build new tag without comment frames
+      final newTagBytes = <int>[];
+      newTagBytes.addAll(bytes.sublist(0, 10)); // Copy header (will update size later)
+
+      int removedCount = 0;
+      while (pos < 10 + tagSize && pos + 10 < bytes.length) {
+        // Read frame header
+        final frameId = String.fromCharCodes(bytes.sublist(pos, pos + 4));
+
+        // Check for padding (null bytes)
+        if (frameId[0] == '\x00') break;
+
+        // Frame size (depends on version)
+        int frameSize;
+        if (majorVersion >= 4) {
+          // v2.4 uses syncsafe integers
+          frameSize = ((bytes[pos + 4] & 0x7F) << 21) |
+              ((bytes[pos + 5] & 0x7F) << 14) |
+              ((bytes[pos + 6] & 0x7F) << 7) |
+              (bytes[pos + 7] & 0x7F);
+        } else {
+          // v2.3 uses regular integers
+          frameSize = (bytes[pos + 4] << 24) |
+              (bytes[pos + 5] << 16) |
+              (bytes[pos + 6] << 8) |
+              bytes[pos + 7];
+        }
+
+        final totalFrameSize = 10 + frameSize; // header + content
+        bool shouldRemove = false;
+
+        // Check if it's a direct COMM frame
+        if (commentFrameIds.contains(frameId)) {
+          Log.d('TagEditorService: Removing COMM frame ($frameSize bytes)');
+          shouldRemove = true;
+        }
+        // Check if it's a TXXX frame with COMM description (used by Suno and others)
+        else if (frameId == 'TXXX' && frameSize > 0) {
+          // Parse TXXX frame to check description
+          // Format: encoding (1 byte) + description (null-terminated) + value
+          final frameContent = bytes.sublist(pos + 10, pos + 10 + frameSize);
+          if (frameContent.isNotEmpty) {
+            final encoding = frameContent[0];
+
+            // Find null terminator for description
+            int nullPos = 1;
+            if (encoding == 0 || encoding == 3) {
+              // ISO-8859-1 or UTF-8: single null byte
+              while (nullPos < frameContent.length && frameContent[nullPos] != 0) {
+                nullPos++;
+              }
+            } else if (encoding == 1 || encoding == 2) {
+              // UTF-16: double null bytes
+              while (nullPos < frameContent.length - 1) {
+                if (frameContent[nullPos] == 0 && frameContent[nullPos + 1] == 0) {
+                  break;
+                }
+                nullPos++;
+              }
+            }
+
+            // Extract description
+            String description = '';
+            try {
+              if (encoding == 0 || encoding == 3) {
+                description = String.fromCharCodes(frameContent.sublist(1, nullPos));
+              } else {
+                // For UTF-16, just try basic extraction
+                final descBytes = frameContent.sublist(1, nullPos);
+                description = String.fromCharCodes(descBytes.where((b) => b > 0 && b < 128));
+              }
+            } catch (e) {
+              // Fallback: try to read as ASCII
+              description = String.fromCharCodes(
+                frameContent.sublist(1, nullPos).where((b) => b > 31 && b < 127)
+              );
+            }
+
+            // Check if description indicates this is comment data
+            final descUpper = description.toUpperCase().trim();
+            if (descUpper == 'COMM' || descUpper == 'COMMENT' || descUpper == 'COMMENTS') {
+              Log.d('TagEditorService: Removing TXXX frame with description "$description" ($frameSize bytes)');
+              shouldRemove = true;
+            }
+          }
+        }
+
+        if (shouldRemove) {
+          removedCount++;
+        } else {
+          // Keep this frame
+          newTagBytes.addAll(bytes.sublist(pos, pos + totalFrameSize));
+        }
+
+        pos += totalFrameSize;
+      }
+
+      if (removedCount == 0) {
+        Log.d('TagEditorService: No comment frames found to remove');
+        return TagWriteResult(
+          success: true,
+          filePath: filePath,
+        );
+      }
+
+      // Add padding to maintain alignment
+      final audioDataStart = 10 + tagSize;
+      final newTagSize = newTagBytes.length - 10;
+      final paddingNeeded = tagSize - newTagSize;
+      if (paddingNeeded > 0) {
+        newTagBytes.addAll(List.filled(paddingNeeded, 0));
+      }
+
+      // Update tag size in header (syncsafe)
+      final finalTagSize = newTagBytes.length - 10;
+      newTagBytes[6] = (finalTagSize >> 21) & 0x7F;
+      newTagBytes[7] = (finalTagSize >> 14) & 0x7F;
+      newTagBytes[8] = (finalTagSize >> 7) & 0x7F;
+      newTagBytes[9] = finalTagSize & 0x7F;
+
+      // Append audio data
+      final resultBytes = Uint8List.fromList([
+        ...newTagBytes,
+        ...bytes.sublist(audioDataStart),
+      ]);
+
+      Log.d('TagEditorService: Removed $removedCount comment frames, new size: ${resultBytes.length}');
+
+      // Write back using native method if needed
+      final writeSuccess = await _writeFileBytes(filePath, resultBytes);
+      if (!writeSuccess) {
+        return TagWriteResult(
+          success: false,
+          error: 'Failed to write file',
+          filePath: filePath,
+        );
+      }
+
+      return TagWriteResult(
+        success: true,
+        filePath: filePath,
+      );
+    } catch (e) {
+      Log.d('TagEditorService: Error removing comments: $e');
+      return TagWriteResult(
+        success: false,
+        error: e.toString(),
+        filePath: filePath,
+      );
+    }
+  }
+
+  /// Remove comments from multiple files
+  Future<List<TagWriteResult>> removeCommentsFromFiles(List<String> filePaths) async {
+    final results = <TagWriteResult>[];
+    for (final path in filePaths) {
+      results.add(await removeCommentFrames(path));
     }
     return results;
   }

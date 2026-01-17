@@ -173,6 +173,7 @@ class VibeAudioEngine(private val context: Context) {
     var onDurationChanged: ((Long) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     var onCompletion: (() -> Unit)? = null
+    var onAutoTransition: (() -> Unit)? = null  // Called when native auto-advances to next track
 
     init {
         detectDeviceCapabilities()
@@ -352,8 +353,21 @@ class VibeAudioEngine(private val context: Context) {
         Log.d(TAG, "Starting playback")
         isPlaying.set(true)
 
-        mediaCodec?.start()
-        audioTrack?.play()
+        // Only call start() on MediaCodec if it's not already in Executing state
+        // After flush(), the codec is in Flushed sub-state, we just need to restart the loop
+        try {
+            mediaCodec?.start()
+        } catch (e: IllegalStateException) {
+            // Codec might already be started (after flush), that's OK
+            Log.d(TAG, "MediaCodec already started or in valid state: ${e.message}")
+        }
+
+        // Ensure AudioTrack is playing
+        audioTrack?.let { track ->
+            if (track.playState != android.media.AudioTrack.PLAYSTATE_PLAYING) {
+                track.play()
+            }
+        }
 
         // Start decode/playback thread
         playbackThread = Thread { playbackLoop() }.apply {
@@ -440,10 +454,11 @@ class VibeAudioEngine(private val context: Context) {
         Log.d(TAG, "Seeking to ${positionMs}ms")
 
         val wasPlaying = isPlaying.get()
-        if (wasPlaying) {
-            isPlaying.set(false)
-            playbackThread?.join(500)
-        }
+
+        // Always stop playback thread first to avoid race conditions
+        isPlaying.set(false)
+        playbackThread?.join(500)
+        playbackThread = null
 
         mediaExtractor?.seekTo(positionMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
         mediaCodec?.flush()
@@ -475,6 +490,11 @@ class VibeAudioEngine(private val context: Context) {
      * Check if currently playing
      */
     fun isPlaying(): Boolean = isPlaying.get()
+
+    /**
+     * Check if a track is prepared and ready to play
+     */
+    fun isPrepared(): Boolean = isPrepared.get()
 
     /**
      * Get the audio session ID for effects
@@ -698,38 +718,60 @@ class VibeAudioEngine(private val context: Context) {
         val bufferInfo = MediaCodec.BufferInfo()
         var inputDone = false
 
-        while (isCrossfading.get()) {
-            // Feed input to decoder
-            if (!inputDone) {
-                val inputIndex = codec.dequeueInputBuffer(10000)
-                if (inputIndex >= 0) {
-                    val inputBuffer = codec.getInputBuffer(inputIndex)
-                    if (inputBuffer != null) {
-                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                        if (sampleSize < 0) {
-                            codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                        } else {
-                            val presentationTimeUs = extractor.sampleTime
-                            codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
-                            extractor.advance()
+        try {
+            while (isCrossfading.get()) {
+                // Feed input to decoder
+                // Use short timeout so we can respond quickly to stop signals
+                if (!inputDone) {
+                    val inputIndex = codec.dequeueInputBuffer(100)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = codec.getInputBuffer(inputIndex)
+                        if (inputBuffer != null) {
+                            val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                            } else {
+                                val presentationTimeUs = extractor.sampleTime
+                                codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
+                                extractor.advance()
+                            }
                         }
                     }
                 }
-            }
 
-            // Get decoded output and write to AudioTrack
-            val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
-            if (outputIndex >= 0) {
-                val outputBuffer = codec.getOutputBuffer(outputIndex)
-                if (outputBuffer != null && bufferInfo.size > 0) {
-                    val audioData = ByteArray(bufferInfo.size)
-                    outputBuffer.get(audioData)
-                    outputBuffer.rewind()
-                    track.write(audioData, 0, audioData.size)
+                // Check again before output operations (early exit if crossfade ended)
+                if (!isCrossfading.get()) break
+
+                // Get decoded output and write to AudioTrack
+                val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 100)
+                if (outputIndex >= 0) {
+                    // Final check before releasing buffer
+                    if (!isCrossfading.get()) {
+                        // Just release the buffer without processing
+                        try {
+                            codec.releaseOutputBuffer(outputIndex, false)
+                        } catch (e: Exception) {
+                            // Ignore - we're exiting anyway
+                        }
+                        break
+                    }
+
+                    val outputBuffer = codec.getOutputBuffer(outputIndex)
+                    if (outputBuffer != null && bufferInfo.size > 0) {
+                        val audioData = ByteArray(bufferInfo.size)
+                        outputBuffer.get(audioData)
+                        outputBuffer.rewind()
+                        track.write(audioData, 0, audioData.size)
+                    }
+                    codec.releaseOutputBuffer(outputIndex, false)
                 }
-                codec.releaseOutputBuffer(outputIndex, false)
             }
+        } catch (e: IllegalStateException) {
+            // Codec was released - this is expected when crossfade completes
+            Log.d(TAG, "Crossfade playback loop: codec released (expected): ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Crossfade playback loop error: ${e.message}")
         }
 
         Log.d(TAG, "Crossfade playback loop ended")
@@ -772,16 +814,39 @@ class VibeAudioEngine(private val context: Context) {
     private fun completeCrossfadeTransition() {
         Log.d(TAG, "Completing crossfade transition")
 
-        // Stop current track
-        isPlaying.set(false)
-        playbackThread?.join(500)
+        // IMPORTANT: Signal crossfade loop to stop FIRST
+        // This must happen before we do anything with the codecs
+        isCrossfading.set(false)
 
-        // Release current resources
-        audioTrack?.stop()
-        audioTrack?.release()
-        mediaCodec?.stop()
-        mediaCodec?.release()
-        mediaExtractor?.release()
+        // Stop current track's playback loop
+        isPlaying.set(false)
+        playbackThread?.join(1000)
+        playbackThread = null
+
+        // Wait for crossfade playback loop to exit
+        // This is critical - the crossfadePlaybackLoop uses nextMediaCodec
+        // and we must wait for it to stop before we can safely use that codec
+        crossfadePlaybackThread?.join(2000)
+        crossfadePlaybackThread = null
+
+        // Now it's safe to release current resources
+        try {
+            audioTrack?.stop()
+            audioTrack?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing current AudioTrack: ${e.message}")
+        }
+        try {
+            mediaCodec?.stop()
+            mediaCodec?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing current MediaCodec: ${e.message}")
+        }
+        try {
+            mediaExtractor?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing current MediaExtractor: ${e.message}")
+        }
 
         // Swap next to current
         audioTrack = nextAudioTrack
@@ -798,8 +863,29 @@ class VibeAudioEngine(private val context: Context) {
         nextPrepared.set(false)
         nextTrackPath = null
 
-        // Reset state
-        isCrossfading.set(false)
+        // Ensure the codec is in executing state for the new playback loop
+        // The crossfade may have left the codec in an unexpected state
+        // After crossfade, we want to continue from where we left off, not restart from beginning
+        // The codec should already be in EXECUTING state from the crossfade loop
+        // But just in case there was a race condition, verify it's ready
+        mediaCodec?.let { codec ->
+            try {
+                // Try a quick operation to verify codec is in executing state
+                // If this throws IllegalStateException, codec needs restart
+                codec.dequeueInputBuffer(0) // Non-blocking check
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "Codec not in executing state after crossfade: ${e.message}")
+                // Codec is in wrong state - try to restart it
+                try {
+                    codec.start()
+                    Log.d(TAG, "Codec restarted after crossfade")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Failed to restart codec: ${e2.message}")
+                }
+            }
+        }
+
+        // Reset state and continue playback
         audioTrack?.setVolume(volume)
         isPrepared.set(true)
         isPlaying.set(true)
@@ -1211,11 +1297,97 @@ class VibeAudioEngine(private val context: Context) {
         }
 
         if (outputDone && isPlaying.get()) {
-            mainHandler.post {
-                isPlaying.set(false)
-                setState(State.STOPPED)
-                onCompletion?.invoke()
+            // Track completed - check if we should auto-advance to next track
+            // This is critical for background playback when Flutter might be throttled
+            if (nextPrepared.get() && gaplessEnabled) {
+                Log.d(TAG, "Track completed - auto-advancing to prepared next track (background-safe)")
+                mainHandler.post {
+                    // Perform gapless transition without waiting for Flutter
+                    val success = performAutoTransition()
+                    if (success) {
+                        // Notify Flutter that we auto-transitioned (different from completion)
+                        // This tells Flutter to advance its queue index without trying to start playback
+                        onAutoTransition?.invoke()
+                    } else {
+                        // Transition failed, stop playback
+                        isPlaying.set(false)
+                        setState(State.STOPPED)
+                        onCompletion?.invoke()
+                    }
+                }
+            } else {
+                // No next track prepared - normal completion
+                mainHandler.post {
+                    isPlaying.set(false)
+                    setState(State.STOPPED)
+                    onCompletion?.invoke()
+                }
             }
+        }
+    }
+
+    /**
+     * Perform automatic transition to next track (called from playback thread on completion).
+     * This runs on the main handler thread.
+     * Returns true if transition succeeded and playback continues.
+     */
+    private fun performAutoTransition(): Boolean {
+        if (!nextPrepared.get()) {
+            Log.d(TAG, "performAutoTransition: No next track prepared")
+            return false
+        }
+
+        Log.d(TAG, "performAutoTransition: Transitioning to next track")
+
+        try {
+            // Stop current playback but keep wake lock
+            isPlaying.set(false)
+            playbackThread?.join(500)
+            playbackThread = null
+
+            // Release current track resources
+            mediaCodec?.stop()
+            mediaCodec?.release()
+            mediaExtractor?.release()
+
+            // Move next track to current
+            mediaExtractor = nextMediaExtractor
+            mediaCodec = nextMediaCodec
+            sampleRate = nextSampleRate
+            channelCount = nextChannelCount
+            durationMs = nextDurationMs
+
+            // Clear next track references (but keep extractor/codec since we moved them)
+            nextMediaExtractor = null
+            nextMediaCodec = null
+            nextPrepared.set(false)
+            nextDurationMs = 0
+
+            // Reset position
+            positionUs.set(0)
+
+            // CRITICAL: Start the codec - it was only configured in prepareNextTrack()
+            // Without this, the playback loop will fail because codec is not in EXECUTING state
+            mediaCodec?.start()
+            Log.d(TAG, "performAutoTransition: MediaCodec started")
+
+            // Notify duration change
+            mainHandler.post {
+                onDurationChanged?.invoke(durationMs)
+            }
+
+            // Start playback on new track (wake lock is still held)
+            isPlaying.set(true)
+            playbackThread = Thread { playbackLoop() }
+            playbackThread?.start()
+
+            setState(State.PLAYING)
+            Log.d(TAG, "performAutoTransition: Success - now playing next track (${durationMs}ms)")
+            return true
+
+        } catch (e: Exception) {
+            Log.e(TAG, "performAutoTransition failed: ${e.message}", e)
+            return false
         }
     }
 

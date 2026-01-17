@@ -5,7 +5,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/playlists/data/playlist_repository.dart';
 import '../../features/tag_editor/presentation/screens/tag_editor_screen.dart';
+import '../../features/tag_editor/data/tag_editor_service.dart';
+import '../../features/library/data/media_scanner.dart';
 import '../../services/audio_handler.dart';
+import '../../services/genre_classifier_service.dart';
 import '../models/song.dart';
 
 /// Show song info dialog
@@ -17,8 +20,157 @@ void showSongInfoDialog(BuildContext context, Song song) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (context) => DraggableScrollableSheet(
-      initialChildSize: 0.6,
+    builder: (context) => _SongInfoSheet(song: song),
+  );
+}
+
+class _SongInfoSheet extends ConsumerStatefulWidget {
+  final Song song;
+
+  const _SongInfoSheet({required this.song});
+
+  @override
+  ConsumerState<_SongInfoSheet> createState() => _SongInfoSheetState();
+}
+
+class _SongInfoSheetState extends ConsumerState<_SongInfoSheet> {
+  bool _isDetectingGenre = false;
+  bool _isApplyingGenre = false;
+  GenreClassificationResult? _detectedGenre;
+  String? _actualGenre; // Genre read directly from file
+  bool _isLoadingGenre = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActualGenre();
+  }
+
+  Future<void> _loadActualGenre() async {
+    if (widget.song.path == null) {
+      setState(() {
+        _isLoadingGenre = false;
+        _actualGenre = widget.song.genre;
+      });
+      return;
+    }
+
+    try {
+      final tagService = TagEditorService();
+      if (tagService.isFormatSupported(widget.song.path)) {
+        final tags = await tagService.readTags(widget.song.path!);
+        if (mounted) {
+          setState(() {
+            _actualGenre = tags?.genre ?? widget.song.genre;
+            _isLoadingGenre = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _actualGenre = widget.song.genre;
+            _isLoadingGenre = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _actualGenre = widget.song.genre;
+          _isLoadingGenre = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _detectGenre() async {
+    if (_isDetectingGenre || widget.song.path == null) return;
+
+    setState(() => _isDetectingGenre = true);
+
+    try {
+      final classifier = GenreClassifierService();
+      final result = await classifier.classifySong(widget.song);
+
+      if (mounted) {
+        setState(() {
+          _detectedGenre = result;
+          _isDetectingGenre = false;
+        });
+
+        if (result != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Detected: ${result.genre} (${(result.confidence * 100).toStringAsFixed(0)}%${result.isHeuristic ? ' - heuristic' : ''})',
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isDetectingGenre = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Genre detection failed')),
+        );
+      }
+    }
+  }
+
+  Future<void> _applyGenre(String genre) async {
+    if (_isApplyingGenre) return;
+
+    setState(() => _isApplyingGenre = true);
+
+    try {
+      final scanner = ref.read(mediaScannerProvider);
+      final success = await GenreClassifierService.applyGenreToSong(
+        widget.song,
+        genre,
+        scanner: scanner,
+      );
+
+      if (mounted) {
+        setState(() => _isApplyingGenre = false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              success
+                  ? 'Genre "$genre" applied to ${widget.song.title}'
+                  : 'Failed to apply genre (MP3 files only)',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        if (success) {
+          // Refresh the library to show updated genre
+          ref.invalidate(songsProvider);
+          // Update the displayed genre
+          setState(() {
+            _actualGenre = genre;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isApplyingGenre = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to apply genre')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final song = widget.song;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.65,
       minChildSize: 0.4,
       maxChildSize: 0.9,
       expand: false,
@@ -54,13 +206,23 @@ void showSongInfoDialog(BuildContext context, Song song) {
             _buildInfoRow('Artist', song.artistDisplay),
             _buildInfoRow('Album', song.album ?? 'Unknown'),
             _buildInfoRow('Duration', song.durationFormatted),
-            if (song.genre != null) _buildInfoRow('Genre', song.genre!),
+
+            // Genre row with detect button
+            _buildGenreRow(song),
+
             if (song.year != null) _buildInfoRow('Year', song.year.toString()),
             if (song.trackNumber != null)
               _buildInfoRow('Track', song.trackNumber.toString()),
             _buildInfoRow('Format', song.fileExtension?.toUpperCase() ?? 'Unknown'),
             if (song.size != null)
               _buildInfoRow('Size', _formatFileSize(song.size!)),
+
+            // ML detected genre section
+            if (_detectedGenre != null) ...[
+              const SizedBox(height: 16),
+              _buildDetectedGenreSection(),
+            ],
+
             if (song.path != null) ...[
               const SizedBox(height: 16),
               Text(
@@ -110,8 +272,182 @@ void showSongInfoDialog(BuildContext context, Song song) {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
+
+  Widget _buildGenreRow(Song song) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(
+            width: 80,
+            child: Text(
+              'Genre',
+              style: TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Expanded(
+            child: _isLoadingGenre
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(
+                    _actualGenre ?? 'Unknown',
+                    style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+          ),
+          if (song.path != null)
+            _isDetectingGenre
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.auto_awesome, size: 20),
+                    color: AppTheme.primaryColor,
+                    tooltip: 'Detect genre with AI',
+                    onPressed: _detectGenre,
+                  ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetectedGenreSection() {
+    final result = _detectedGenre!;
+    final topGenres = result.topPredictions(3);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.auto_awesome,
+                color: AppTheme.primaryColor,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'AI Genre Detection',
+                style: TextStyle(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              if (result.isHeuristic) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Heuristic',
+                    style: TextStyle(
+                      color: Colors.orange,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...topGenres.map((entry) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 80,
+                  child: Text(
+                    entry.key,
+                    style: TextStyle(
+                      color: entry.key == result.genre
+                          ? AppTheme.textPrimary
+                          : AppTheme.textSecondary,
+                      fontWeight: entry.key == result.genre
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: LinearProgressIndicator(
+                    value: entry.value,
+                    backgroundColor: AppTheme.darkSurface,
+                    valueColor: AlwaysStoppedAnimation(
+                      entry.key == result.genre
+                          ? AppTheme.primaryColor
+                          : AppTheme.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 40,
+                  child: Text(
+                    '${(entry.value * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+          )),
+          const SizedBox(height: 12),
+          // Apply button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isApplyingGenre ? null : () => _applyGenre(result.genre),
+              icon: _isApplyingGenre
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.save, size: 18),
+              label: Text(_isApplyingGenre ? 'Applying...' : 'Apply "${result.genre}" to song'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 Widget _buildInfoRow(String label, String value) {

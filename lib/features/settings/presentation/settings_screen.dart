@@ -7,6 +7,8 @@ import '../../../services/audio_handler.dart';
 import '../../equalizer/presentation/equalizer_screen.dart';
 import '../../statistics/presentation/statistics_screen.dart';
 import '../../library/data/media_scanner.dart';
+import '../../library/presentation/screens/genre_classifier_screen.dart';
+import '../../tag_editor/data/tag_editor_service.dart';
 import '../data/settings_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -151,10 +153,31 @@ class SettingsScreen extends ConsumerWidget {
             ),
             _buildSettingsTile(
               context,
+              icon: Icons.auto_awesome,
+              title: 'AI Genre Detection',
+              subtitle: 'Batch classify songs by genre',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const GenreClassifierScreen(),
+                  ),
+                );
+              },
+            ),
+            _buildSettingsTile(
+              context,
               icon: Icons.folder_rounded,
               title: 'Rescan Library',
               subtitle: 'Scan device for new music',
               onTap: () => _rescanLibrary(context, ref),
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.cleaning_services_rounded,
+              title: 'Clear Library Cache',
+              subtitle: 'Reset library data (files not deleted)',
+              onTap: () => _clearLibraryCache(context, ref),
             ),
             _buildSettingsTile(
               context,
@@ -174,6 +197,35 @@ class SettingsScreen extends ConsumerWidget {
                 HapticFeedback.selectionClick();
                 ref.read(settingsProvider.notifier).toggleSortAscending();
               },
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.comment_rounded,
+              title: 'Strip Comments on Import',
+              subtitle: settings.stripCommentsOnImport
+                  ? 'Enabled - comments removed from new songs'
+                  : 'Disabled',
+              trailing: Switch(
+                value: settings.stripCommentsOnImport,
+                onChanged: (value) {
+                  HapticFeedback.selectionClick();
+                  ref.read(settingsProvider.notifier).setStripCommentsOnImport(value);
+                },
+                activeColor: AppTheme.primaryColor,
+              ),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                ref.read(settingsProvider.notifier).setStripCommentsOnImport(
+                  !settings.stripCommentsOnImport,
+                );
+              },
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.cleaning_services_rounded,
+              title: 'Strip Comments from Library',
+              subtitle: 'Remove all comment metadata from songs',
+              onTap: () => _stripCommentsFromLibrary(context, ref),
             ),
 
             const SizedBox(height: 24),
@@ -198,6 +250,24 @@ class SettingsScreen extends ConsumerWidget {
               ),
               onTap: () {
                 _showComingSoonInfo(context, 'Dynamic Colors', 'This feature will automatically adapt the app\'s colors based on the currently playing album art.');
+              },
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.animation_rounded,
+              title: 'Visualizer Animations',
+              subtitle: settings.visualizerEnabled
+                  ? 'Enabled (uses more battery)'
+                  : 'Disabled (saves battery)',
+              trailing: Switch(
+                value: settings.visualizerEnabled,
+                onChanged: (value) {
+                  ref.read(settingsProvider.notifier).setVisualizerEnabled(value);
+                },
+                activeColor: AppTheme.primaryColor,
+              ),
+              onTap: () {
+                ref.read(settingsProvider.notifier).setVisualizerEnabled(!settings.visualizerEnabled);
               },
             ),
 
@@ -412,6 +482,234 @@ class SettingsScreen extends ConsumerWidget {
             }),
           ],
         ),
+      ),
+    );
+  }
+
+  void _stripCommentsFromLibrary(BuildContext context, WidgetRef ref) async {
+    // Check for manage storage permission first (Android 11+)
+    final hasPermission = await TagEditorService.hasManageStoragePermission();
+    if (!hasPermission) {
+      if (!context.mounted) return;
+      final shouldOpenSettings = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppTheme.darkCard,
+          title: const Text('Permission Required'),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('To modify music files, VibePlay needs "All files access" permission.'),
+              SizedBox(height: 12),
+              Text(
+                'Tap "Open Settings" and enable "Allow access to manage all files".',
+                style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Open Settings'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldOpenSettings == true) {
+        await TagEditorService.openManageStorageSettings();
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Strip Comments'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This will remove all comment metadata from MP3 files in your library.'),
+            SizedBox(height: 12),
+            Text(
+              'Only MP3 files are supported. This action cannot be undone.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _performStripComments(context, ref);
+            },
+            icon: const Icon(Icons.cleaning_services, size: 18),
+            label: const Text('Strip Comments'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performStripComments(BuildContext context, WidgetRef ref) async {
+    // Show progress indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('Stripping comments from library...'),
+          ],
+        ),
+        duration: Duration(seconds: 30),
+      ),
+    );
+
+    try {
+      // Get all songs from library
+      final songs = await ref.read(songsProvider.future);
+      final tagService = TagEditorService();
+      final scanner = ref.read(mediaScannerProvider);
+
+      // Filter to MP3 files only
+      final mp3Songs = songs.where((s) =>
+        s.path != null && tagService.isFormatSupported(s.path)
+      ).toList();
+
+      if (mp3Songs.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No MP3 files found in library'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      int successCount = 0;
+      int errorCount = 0;
+
+      // Process each file
+      for (final song in mp3Songs) {
+        if (song.path != null) {
+          final result = await tagService.removeCommentFrames(song.path!);
+          if (result.success) {
+            successCount++;
+            // Rescan file to update MediaStore
+            await scanner.rescanFile(song.path!);
+          } else {
+            errorCount++;
+          }
+        }
+      }
+
+      // Invalidate library to refresh
+      ref.invalidate(songsProvider);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorCount == 0
+                  ? 'Stripped comments from $successCount files'
+                  : 'Stripped comments from $successCount files ($errorCount errors)',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  void _clearLibraryCache(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Clear Library Cache'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('This will reset the library database. Your music files will NOT be deleted.'),
+            SizedBox(height: 12),
+            Text(
+              'The library will be rebuilt on next scan.',
+              style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+
+              // Clear the media scanner cache
+              final scanner = ref.read(mediaScannerProvider);
+              scanner.invalidateCache();
+
+              // Invalidate all library providers
+              ref.invalidate(songsProvider);
+              ref.invalidate(albumsProvider);
+              ref.invalidate(artistsProvider);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Library cache cleared. Rescanning...'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            icon: const Icon(Icons.cleaning_services, size: 18),
+            label: const Text('Clear Cache'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
       ),
     );
   }

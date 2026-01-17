@@ -60,6 +60,9 @@ class AppSettings {
   final VisualizerStyleSetting visualizerStyle;
   final bool visualizerEnabled;
 
+  // Import options
+  final bool stripCommentsOnImport;
+
   const AppSettings({
     this.playbackSpeed = 1.0,
     this.defaultSort = SortOrder.title,
@@ -77,6 +80,7 @@ class AppSettings {
     this.pitchSemitones = 0.0,
     this.visualizerStyle = VisualizerStyleSetting.resonance,
     this.visualizerEnabled = true,
+    this.stripCommentsOnImport = false,
   });
 
   // Convenience getters for backwards compatibility
@@ -100,6 +104,7 @@ class AppSettings {
     double? pitchSemitones,
     VisualizerStyleSetting? visualizerStyle,
     bool? visualizerEnabled,
+    bool? stripCommentsOnImport,
   }) {
     return AppSettings(
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
@@ -118,6 +123,7 @@ class AppSettings {
       pitchSemitones: pitchSemitones ?? this.pitchSemitones,
       visualizerStyle: visualizerStyle ?? this.visualizerStyle,
       visualizerEnabled: visualizerEnabled ?? this.visualizerEnabled,
+      stripCommentsOnImport: stripCommentsOnImport ?? this.stripCommentsOnImport,
     );
   }
 
@@ -138,6 +144,7 @@ class AppSettings {
     'pitchSemitones': pitchSemitones,
     'visualizerStyle': visualizerStyle.index,
     'visualizerEnabled': visualizerEnabled,
+    'stripCommentsOnImport': stripCommentsOnImport,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
@@ -191,6 +198,7 @@ class AppSettings {
       pitchSemitones: (json['pitchSemitones'] as num?)?.toDouble() ?? 0.0,
       visualizerStyle: visualizerStyle,
       visualizerEnabled: json['visualizerEnabled'] as bool? ?? true,
+      stripCommentsOnImport: json['stripCommentsOnImport'] as bool? ?? false,
     );
   }
 
@@ -325,6 +333,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
     // Apply audio effects settings
     await _applyAudioEffectsSettings();
+
+    // Apply visualizer/AudioPulse setting (for battery saving)
+    await audioHandler.setAudioPulseEnabled(state.visualizerEnabled);
   }
 
   Future<void> _applyAudioEffectsSettings() async {
@@ -459,12 +470,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> setVisualizerEnabled(bool enabled) async {
     state = state.copyWith(visualizerEnabled: enabled);
+    // Also enable/disable the native AudioPulse FFT analysis to save battery
+    // When visualizer is off, there's no need for real-time audio analysis
+    await audioHandler.setAudioPulseEnabled(enabled);
     await _save();
   }
 
   Future<void> cycleVisualizerStyle() async {
     final nextIndex = (state.visualizerStyle.index + 1) % VisualizerStyleSetting.values.length;
     await setVisualizerStyle(VisualizerStyleSetting.values[nextIndex]);
+  }
+
+  // Import settings
+  Future<void> setStripCommentsOnImport(bool enabled) async {
+    state = state.copyWith(stripCommentsOnImport: enabled);
+    await _save();
   }
 }
 

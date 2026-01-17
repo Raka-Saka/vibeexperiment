@@ -49,6 +49,11 @@ android {
         versionName = flutter.versionName
     }
 
+    // Don't compress TFLite model files
+    androidResources {
+        noCompress += listOf("tflite")
+    }
+
     buildTypes {
         release {
             // Use release signing if key.properties exists, otherwise fall back to debug
@@ -72,4 +77,22 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // TensorFlow Lite for on-device ML genre classification
+    // Updated to 2.17.0 for FULLY_CONNECTED op v12 support
+    // Note: TFLite 2.17+ uses LiteRT internally
+    implementation("org.tensorflow:tensorflow-lite:2.17.0")
+    // Exclude old API that conflicts with LiteRT
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        // Force consistent TensorFlow Lite version
+        force("org.tensorflow:tensorflow-lite:2.17.0")
+    }
 }

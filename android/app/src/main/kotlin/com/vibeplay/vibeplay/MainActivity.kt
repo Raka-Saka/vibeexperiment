@@ -2,6 +2,7 @@ package com.vibeplay.vibeplay
 
 import com.ryanheise.audioservice.AudioServiceActivity
 import com.vibeplay.vibeplay.audio.VibeAudioHandler
+import com.vibeplay.vibeplay.ml.GenreClassifierHandler
 import com.vibeplay.vibeplay.widget.WidgetHandler
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -23,6 +24,12 @@ class MainActivity : AudioServiceActivity() {
     private val VIBE_AUDIO_EVENTS_CHANNEL = "com.vibeplay/vibe_audio_events"
     private val VIBE_AUDIO_PULSE_CHANNEL = "com.vibeplay/vibe_audio_pulse"
 
+    // ML Genre Classifier channel
+    private val GENRE_CLASSIFIER_CHANNEL = "com.vibeplay/genre_classifier"
+
+    // File operations channel (for MediaStore-based file writing)
+    private val FILE_OPERATIONS_CHANNEL = "com.vibeplay/file_operations"
+
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val equalizerHandler = EqualizerHandler()
     private val lyricsHandler = LyricsHandler()
@@ -31,6 +38,8 @@ class MainActivity : AudioServiceActivity() {
     private lateinit var widgetHandler: WidgetHandler
     private lateinit var vibeAudioHandler: VibeAudioHandler
     private lateinit var audioAnalysisHandler: AudioAnalysisHandler
+    private lateinit var genreClassifierHandler: GenreClassifierHandler
+    private lateinit var fileOperationsHandler: FileOperationsHandler
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -40,10 +49,20 @@ class MainActivity : AudioServiceActivity() {
         visualizerHandler = VisualizerHandler(this)
         vibeAudioHandler = VibeAudioHandler(this)
         audioAnalysisHandler = AudioAnalysisHandler(this)
+        genreClassifierHandler = GenreClassifierHandler(this)
+        fileOperationsHandler = FileOperationsHandler(this)
 
         // Audio analysis channel (LUFS loudness measurement)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, AUDIO_ANALYSIS_CHANNEL)
             .setMethodCallHandler(audioAnalysisHandler)
+
+        // ML Genre classifier channel
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, GENRE_CLASSIFIER_CHANNEL)
+            .setMethodCallHandler(genreClassifierHandler)
+
+        // File operations channel (MediaStore-based file writing)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FILE_OPERATIONS_CHANNEL)
+            .setMethodCallHandler(fileOperationsHandler)
 
         // Equalizer channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, EQUALIZER_CHANNEL)
@@ -121,5 +140,7 @@ class MainActivity : AudioServiceActivity() {
         visualizerHandler.release()
         vibeAudioHandler.release()
         audioAnalysisHandler.release()
+        genreClassifierHandler.release()
+        fileOperationsHandler.release()
     }
 }

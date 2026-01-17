@@ -1,0 +1,15 @@
+# Requirements for genre classifier training
+# IMPORTANT: Use TensorFlow 2.14.x or 2.15.x for TFLite model compatibility
+# TensorFlow 2.16+ produces FULLY_CONNECTED op v12 which isn't supported
+# by Android TFLite runtime
+
+# Option 1: TensorFlow 2.14.0 (recommended - best compatibility)
+tensorflow==2.14.0
+
+# Core dependencies
+tensorflow-hub>=0.15.0
+numpy>=1.24.0
+soundfile>=0.12.0
+
+# For GTZAN dataset from Hugging Face
+datasets>=2.14.0

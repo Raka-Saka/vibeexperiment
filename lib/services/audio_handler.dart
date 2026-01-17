@@ -190,29 +190,74 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
       // Listen to VibeAudioService position for position updates
       _subscriptions.add(
         vibeAudioService.positionStream.listen((position) {
-          if (_useVibeEngine && _crossfadeEnabled && vibeAudioService.duration.inSeconds > 0) {
-            _handleCrossfade(position, vibeAudioService.duration);
+          if (_useVibeEngine) {
+            // Update playback state periodically for lock screen/notification progress
+            // Only update every second to reduce overhead
+            if (position.inSeconds != _lastReportedPosition?.inSeconds) {
+              _lastReportedPosition = position;
+              _updateVibePlaybackState();
+            }
+
+            // Handle crossfade
+            if (_crossfadeEnabled && vibeAudioService.duration.inSeconds > 0) {
+              _handleCrossfade(position, vibeAudioService.duration);
+            }
           }
         }),
       );
 
-      // Listen to VibeAudioService completion for auto-advance
+      // Listen to VibeAudioService for state sync
+      // VibeAudioService now handles completion internally (loop, next track, etc.)
+      // We just need to sync state back to AudioHandler and track statistics
       _subscriptions.add(
-        vibeAudioService.completionStream.listen((_) {
-          if (_useVibeEngine) {
-            Log.audio.d('AudioHandler: Track completed, advancing to next');
-            _onTrackCompleted();
+        vibeAudioService.currentSongStream.listen((song) {
+          Log.audio.d('AudioHandler: Received song from VibeEngine stream: ${song?.title ?? "null"}');
+          if (_useVibeEngine && song != null) {
+            // Track completed song for statistics (if different from current)
+            final prevSong = currentSong;
+            if (prevSong != null && prevSong.id != song.id) {
+              Log.audio.d('AudioHandler: Song changed from "${prevSong.title}" to "${song.title}"');
+              _trackSongCompleted(prevSong, prevSong.duration);
+            }
+
+            // Sync state
+            _currentSongSubject.add(song);
+            _updateMediaItem(song);
+            _currentIndex = vibeAudioService.currentIndex;
+            _currentIndexSubject.add(_currentIndex);
+            _updateVibePlaybackState();
+
+            // Apply normalization to new track
+            _applyNormalization(song);
+
+            // Save playback state (for restore on app restart)
+            _savePlaybackState();
+
+            Log.audio.d('AudioHandler: VibeEngine song synced - index=$_currentIndex, title="${song.title}"');
           }
         }),
       );
     }
 
     // Broadcast playback state to audio_service
-    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    // Use listen() instead of pipe() to allow conditional updates when using VibeEngine
+    _subscriptions.add(
+      _player.playbackEventStream.listen((event) {
+        // Only update from just_audio when NOT using VibeEngine
+        // (VibeEngine updates via _updateVibePlaybackState)
+        if (!_useVibeEngine) {
+          playbackState.add(_transformEvent(event));
+        }
+      }),
+    );
 
-    // Listen to current index changes
+    // Listen to current index changes (just_audio mode only)
+    // When using VibeEngine, state sync is handled by currentSongStream listener
     _subscriptions.add(
       _player.currentIndexStream.listen((index) async {
+        // Skip when using VibeEngine - it manages its own index
+        if (_useVibeEngine) return;
+
         if (index != null && index < _songs.length) {
           _currentIndex = index;
           final song = _songs[index];
@@ -226,30 +271,6 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
 
           // Save playback state (for restore on app restart)
           _savePlaybackState();
-
-          // Switch VibeAudioEngine to new track (but not during setPlaylist to avoid double prepare)
-          if (_useVibeEngine && song.path != null && !_settingPlaylist) {
-            // Only prepare if this is a different track
-            if (song.path != _lastPreparedPath) {
-              final wasPlaying = vibeAudioService.isPlaying;
-              Log.audio.d('AudioHandler: Track changed to ${song.title}, preparing VibeEngine');
-              final success = await vibeAudioService.prepare(song.path!);
-              if (success) {
-                _lastPreparedPath = song.path;
-
-                // Update audio effects with VibeEngine's session ID
-                final sessionId = vibeAudioService.audioSessionId;
-                if (sessionId != null) {
-                  await _updateAudioEffectsSession(sessionId);
-                }
-
-                if (wasPlaying) {
-                  await vibeAudioService.play();
-                  _updateVibePlaybackState();
-                }
-              }
-            }
-          }
 
           if (_crossfadeEnabled && _isFadingOut) {
             _fadeIn();
@@ -470,7 +491,15 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
           return;
         }
 
-        if (!vibeAudioService.isReady && song.path != null) {
+        // IMPORTANT: Check native isPrepared state, not Dart cached state
+        // This prevents "Cannot play - not prepared" errors after EventChannel reconnection
+        final isNativePrepared = await vibeAudioService.isNativePrepared();
+        Log.audio.d('AudioHandler: Native isPrepared=$isNativePrepared, lastPrepared=$_lastPreparedPath, songPath=${song.path}');
+
+        // Need to prepare if: native not prepared, or prepared path doesn't match
+        final needsPrepare = !isNativePrepared || _lastPreparedPath != song.path;
+
+        if (needsPrepare && song.path != null) {
           Log.audio.d('AudioHandler: Track not prepared, preparing ${song.title}');
           final success = await vibeAudioService.prepare(song.path!);
           if (!success) {
@@ -779,19 +808,18 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
 
     try {
       _resetCrossfadeState();
-      // Clear gapless preparation since we're manually skipping
-      _preparedNextPath = null;
-      await vibeAudioService.clearNextTrack();
 
       if (_useVibeEngine) {
-        // Handle skip with VibeEngine - respects shuffle
-        final nextIndex = _getNextShuffleIndex();
-        if (nextIndex != null) {
-          _currentIndex = nextIndex;
-          await _skipToIndex(_currentIndex);
-          // Prepare next track after skip
-          _prepareNextTrackForGapless();
+        // Delegate to VibeAudioService (handles shuffle, loop, gapless)
+        await vibeAudioService.skipToNext();
+        // Sync state back to AudioHandler
+        _currentIndex = vibeAudioService.currentIndex;
+        _currentIndexSubject.add(_currentIndex);
+        if (vibeAudioService.currentSong != null) {
+          _currentSongSubject.add(vibeAudioService.currentSong);
+          _updateMediaItem(vibeAudioService.currentSong!);
         }
+        _updateVibePlaybackState();
       } else {
         // Use just_audio (handles its own shuffle)
         if (_currentIndex < _songs.length - 1) {
@@ -816,38 +844,37 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       _resetCrossfadeState();
 
-      // If more than 3 seconds in, restart current track
-      final currentPosition = _useVibeEngine ? vibeAudioService.position : _player.position;
-      if (currentPosition.inSeconds > 3) {
-        if (_useVibeEngine) {
-          await vibeAudioService.seekTo(Duration.zero);
-        } else {
-          await _player.seek(Duration.zero);
-        }
-        // Early return handled by finally block
-      } else {
-        // Track skip for statistics (only when actually going to previous track)
-        final skippedSong = currentSong;
-        final listenedMs = currentPosition.inMilliseconds;
-        if (skippedSong != null) {
-          _trackSongSkipped(skippedSong, listenedMs);
-        }
-
-        // Clear gapless preparation since we're manually skipping
-        _preparedNextPath = null;
-        await vibeAudioService.clearNextTrack();
-
-        // Go to previous track
-        if (_useVibeEngine) {
-          // Handle previous with VibeEngine - respects shuffle history
-          final prevIndex = _getPreviousShuffleIndex();
-          if (prevIndex != null) {
-            _currentIndex = prevIndex;
-            await _skipToIndex(_currentIndex);
-            // Prepare next track after skip
-            _prepareNextTrackForGapless();
+      if (_useVibeEngine) {
+        // Track skip for statistics (skipToPrevious handles the 3-second logic internally)
+        final currentPosition = vibeAudioService.position;
+        if (currentPosition.inSeconds <= 3) {
+          final skippedSong = currentSong;
+          if (skippedSong != null) {
+            _trackSongSkipped(skippedSong, currentPosition.inMilliseconds);
           }
+        }
+
+        // Delegate to VibeAudioService (handles 3-second restart, shuffle, loop)
+        await vibeAudioService.skipToPrevious();
+        // Sync state back to AudioHandler
+        _currentIndex = vibeAudioService.currentIndex;
+        _currentIndexSubject.add(_currentIndex);
+        if (vibeAudioService.currentSong != null) {
+          _currentSongSubject.add(vibeAudioService.currentSong);
+          _updateMediaItem(vibeAudioService.currentSong!);
+        }
+        _updateVibePlaybackState();
+      } else {
+        // just_audio mode
+        final currentPosition = _player.position;
+        if (currentPosition.inSeconds > 3) {
+          await _player.seek(Duration.zero);
         } else {
+          // Track skip for statistics
+          final skippedSong = currentSong;
+          if (skippedSong != null) {
+            _trackSongSkipped(skippedSong, currentPosition.inMilliseconds);
+          }
           // Use just_audio (handles its own shuffle)
           if (_currentIndex > 0) {
             await _player.seekToPrevious();
@@ -1102,6 +1129,9 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   bool _pendingPositionRestore = false;
   Duration _savedPositionToRestore = Duration.zero;
 
+  // Position tracking for lock screen sync (only update when changed)
+  Duration? _lastReportedPosition;
+
   /// Ensure the inactive audio engine is stopped to prevent dual playback
   Future<void> _ensureSingleEngineActive() async {
     if (_useVibeEngine) {
@@ -1137,16 +1167,7 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
     _settingPlaylist = true;
 
     try {
-      // Also set up just_audio for fallback and notification integration
-      await _playlist.clear();
-      await _playlist.addAll(
-        validSongs.map((song) => AudioSource.file(song.path!)).toList(),
-      );
-
-      // Note: Don't set auto-play on just_audio when using VibeEngine
-      await _player.setAudioSource(_playlist, initialIndex: adjustedIndex);
-
-      // Update queue for audio_service
+      // Update queue for audio_service (notifications/media controls)
       queue.add(validSongs.map((song) => MediaItem(
         id: song.id.toString(),
         title: song.title,
@@ -1159,32 +1180,47 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
       _queueSubject.add(validSongs);
       _currentIndexSubject.add(adjustedIndex);
 
-      // Regenerate shuffle order if shuffle is enabled
-      if (_shuffleEnabled) {
-        _generateShuffleOrder();
-      }
+      if (_useVibeEngine) {
+        // VibeEngine mode: Use VibeAudioService's queue management
+        // Sync shuffle and loop modes first
+        vibeAudioService.setShuffleMode(_shuffleEnabled);
+        vibeAudioService.setLoopMode(_loopMode);
 
-      if (validSongs.isNotEmpty && adjustedIndex < validSongs.length) {
-        final currentSong = validSongs[adjustedIndex];
-        _currentSongSubject.add(currentSong);
-        _updateMediaItem(currentSong);
+        Log.audio.d('AudioHandler: Setting VibeEngine queue with ${validSongs.length} songs at index $adjustedIndex');
 
-        // Prepare VibeAudioEngine if enabled (and not already prepared for this path)
-        if (_useVibeEngine && currentSong.path != null && currentSong.path != _lastPreparedPath) {
-          Log.audio.d('AudioHandler: Preparing VibeAudioEngine for ${currentSong.title}');
-          final success = await vibeAudioService.prepare(currentSong.path!);
-          if (success) {
-            _lastPreparedPath = currentSong.path;
-            Log.audio.d('AudioHandler: VibeAudioEngine prepared successfully');
+        // Update the current song and media item immediately
+        if (validSongs.isNotEmpty && adjustedIndex < validSongs.length) {
+          final currentSong = validSongs[adjustedIndex];
+          _currentSongSubject.add(currentSong);
+          _updateMediaItem(currentSong);
+        }
 
-            // Update audio effects with VibeEngine's session ID
-            final sessionId = vibeAudioService.audioSessionId;
-            if (sessionId != null) {
-              await _updateAudioEffectsSession(sessionId);
-            }
-          } else {
-            Log.audio.d('AudioHandler: VibeAudioEngine prepare FAILED');
-          }
+        // Set the queue without auto-playing (play() will be called separately)
+        await vibeAudioService.setQueue(validSongs, initialIndex: adjustedIndex, autoPlay: false);
+        _lastPreparedPath = validSongs[adjustedIndex].path;
+
+        // Update audio effects with VibeEngine's session ID
+        final sessionId = vibeAudioService.audioSessionId;
+        if (sessionId != null) {
+          await _updateAudioEffectsSession(sessionId);
+        }
+      } else {
+        // just_audio mode: Set up just_audio playlist
+        await _playlist.clear();
+        await _playlist.addAll(
+          validSongs.map((song) => AudioSource.file(song.path!)).toList(),
+        );
+        await _player.setAudioSource(_playlist, initialIndex: adjustedIndex);
+
+        // Regenerate shuffle order if shuffle is enabled
+        if (_shuffleEnabled) {
+          _generateShuffleOrder();
+        }
+
+        if (validSongs.isNotEmpty && adjustedIndex < validSongs.length) {
+          final currentSong = validSongs[adjustedIndex];
+          _currentSongSubject.add(currentSong);
+          _updateMediaItem(currentSong);
         }
       }
     } catch (e) {
@@ -1207,16 +1243,19 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setShuffleModeEnabled(bool enabled) async {
     _shuffleEnabled = enabled;
     _shuffleModeSubject.add(enabled);
-    // Keep just_audio in sync for fallback
-    if (!_useVibeEngine) {
-      await _player.setShuffleModeEnabled(enabled);
-    }
 
-    if (enabled && _songs.isNotEmpty) {
-      _generateShuffleOrder();
+    if (_useVibeEngine) {
+      // Sync with VibeAudioService
+      vibeAudioService.setShuffleMode(enabled);
     } else {
-      _shuffleOrder = [];
-      _shufflePosition = 0;
+      // Keep just_audio in sync for fallback
+      await _player.setShuffleModeEnabled(enabled);
+      if (enabled && _songs.isNotEmpty) {
+        _generateShuffleOrder();
+      } else {
+        _shuffleOrder = [];
+        _shufflePosition = 0;
+      }
     }
     Log.audio.d('AudioHandler: Shuffle mode ${enabled ? "enabled" : "disabled"}');
   }
@@ -1330,8 +1369,12 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> setLoopMode(LoopMode mode) async {
     _loopMode = mode;
     _loopModeSubject.add(mode);
-    // Keep just_audio in sync for fallback
-    if (!_useVibeEngine) {
+
+    if (_useVibeEngine) {
+      // Sync with VibeAudioService
+      vibeAudioService.setLoopMode(mode);
+    } else {
+      // Keep just_audio in sync for fallback
       await _player.setLoopMode(mode);
     }
   }
@@ -1361,6 +1404,14 @@ class VibePlayAudioHandler extends BaseAudioHandler with SeekHandler {
   double get currentPitchSemitones {
     final pitch = _pitchSubject.value;
     return (pitch - 1.0) * 12.0;
+  }
+
+  /// Enable or disable AudioPulse FFT analysis for visualizer.
+  /// Disabling saves significant battery when visualizer is not needed.
+  Future<void> setAudioPulseEnabled(bool enabled) async {
+    if (_useVibeEngine) {
+      await vibeAudioService.setAudioPulseEnabled(enabled);
+    }
   }
 
   Future<void> setVolume(double volume) async {

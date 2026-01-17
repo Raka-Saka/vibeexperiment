@@ -1,8 +1,8 @@
 # VibePlay Roadmap
 
-> **Last Updated:** January 16, 2026
-> **Current Version:** 1.3.1 (Beta)
-> **Status:** Production-hardened, 13 GPU shader visualizers, Phase 3 complete (smart playlists & statistics)
+> **Last Updated:** January 17, 2026
+> **Current Version:** 1.3.2 (Beta)
+> **Status:** Production-hardened, 13 GPU shader visualizers, Phase 3 complete, audio architecture refactor in progress
 
 ---
 
@@ -42,8 +42,8 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 ### Core Playback
 - [x] Custom native audio engine (VibeAudioEngine) with MediaCodec decoding
-- [x] just_audio fallback for compatibility
-- [x] Gapless playback (ConcatenatingAudioSource + native)
+- [x] ~~just_audio fallback for compatibility~~ (being removed - causes state conflicts)
+- [x] Gapless playback (native double-buffering)
 - [x] Crossfade (1-12 seconds, configurable)
 - [x] Playback speed control
 - [x] Shuffle and repeat modes (off/one/all)
@@ -128,6 +128,14 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 ## Critical Issues (Must Fix Before Release)
 
+### Architecture (RESOLVED)
+- [x] **Remove dual audio engine architecture** - See ENGINEERING_LOG.md for details
+  - Fixed: VibeAudioService is now single source of truth for playback state
+  - Fixed: RxDart race conditions via conditional listener guards
+  - Fixed: MediaCodec state handling in play()/seekTo()
+  - Fixed: Crossfade thread synchronization crash
+  - Fixed: Native state sync for "Cannot play - not prepared" errors
+
 ### Security
 - [x] **Move OAuth credentials to secure config** - Client ID moved to secure config
 - [x] **Remove client_secret JSON from repo** - Added to .gitignore
@@ -140,6 +148,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] **Fix deprecated API** - `withOpacity` → `withValues(alpha:)` migrated
 
 ### Performance
+- [x] **Battery optimization** - AudioPulse FFT disabled when visualizer not visible (2026-01-17)
 - [ ] Review visualizer FFT on main thread
 - [ ] Large library pagination (10,000+ songs)
 
@@ -339,6 +348,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 
 | Issue | Priority | Status |
 |-------|----------|--------|
+| Dual audio engine architecture | Critical | Done (2026-01-17) |
 | Zero test coverage | Critical | Done (99 tests) |
 | 328 print() statements | High | Done (Log service) |
 | OAuth credentials in source | High | Done |
@@ -348,6 +358,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 | Song list caching | Low | Done |
 | Artwork LRU cache | Low | Done |
 | Memory leak fixes | Low | Done |
+| Battery drain (visualizer) | High | Done (2026-01-17) |
 
 ---
 
@@ -381,7 +392,7 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Custom EQ presets
 - [x] EQ persistence across app restarts
 
-### v1.3.1 - Visualizer Expansion & Smart Playlists ✅ (Current)
+### v1.3.1 - Visualizer Expansion & Smart Playlists ✅
 - [x] 8 new GPU shader visualizers (total: 13)
   - Spirograph, Voronoi, Sunflower, Attractors
   - Moiré, Pendulum, Flames, Fractal
@@ -391,6 +402,26 @@ VibePlay is designed to work **100% offline** for all core functionality. Your m
 - [x] Rule-based smart playlists with AND/OR logic
   - Filter by artist, album, genre, year, play count, duration, title
   - Create/edit/delete rule-based playlists from Statistics screen
+
+### v1.3.2 - Audio Architecture Fixes (Current)
+- [x] Fixed repeat mode not working (MediaCodec state handling)
+- [x] Fixed RxDart race condition (dual engine state conflicts)
+- [x] Battery optimization for AudioPulse FFT
+- [x] Single audio engine architecture refactor
+  - VibeAudioService as single source of truth for queue/index/state
+  - AudioHandler delegates to VibeAudioService when VibeEngine active
+  - Fixed crossfade crash (codec thread synchronization)
+  - Fixed "Cannot play - not prepared" errors (native state sync)
+- [x] On-device ML genre classification (TensorFlow Lite)
+  - GenreClassifier with mel spectrogram analysis
+  - Trained model with 88.5% accuracy on GTZAN dataset
+  - UI integration in Song Info dialog
+- [x] Background playback fix (native auto-transition)
+  - Music continues playing when screen off and phone disconnected
+  - Native engine auto-advances to next track without waiting for Flutter
+  - Fixed MediaCodec state issue in auto-transition (codec must be started)
+- [x] Visualizer toggle in Settings (Appearance section)
+  - Disables shader animations and AudioPulse FFT to save battery
 
 ### v1.4 - Connectivity
 - [ ] Android Auto

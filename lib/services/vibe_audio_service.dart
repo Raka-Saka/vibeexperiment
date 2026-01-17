@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart' show LoopMode;
 import 'package:rxdart/rxdart.dart';
 import 'log_service.dart';
+import '../shared/models/song.dart';
 
 /// Audio playback state
 enum VibeAudioState {
@@ -180,6 +183,57 @@ class VibeAudioService {
   bool get isPaused => state == VibeAudioState.paused;
   bool get isReady => state == VibeAudioState.ready || isPlaying || isPaused;
 
+  /// Check if native engine is actually prepared (queries native, not cached state)
+  /// Use this before play() to ensure state sync
+  Future<bool> isNativePrepared() async {
+    try {
+      final result = await _methodChannel.invokeMethod('isPrepared');
+      return result == true;
+    } catch (e) {
+      Log.audio.d('VibeAudio: isPrepared check failed: $e');
+      return false;
+    }
+  }
+
+  /// Get native state for sync (use after EventChannel reconnection)
+  Future<Map<String, dynamic>?> getNativeState() async {
+    try {
+      final result = await _methodChannel.invokeMethod('getNativeState');
+      if (result != null) {
+        return Map<String, dynamic>.from(result as Map);
+      }
+      return null;
+    } catch (e) {
+      Log.audio.d('VibeAudio: getNativeState failed: $e');
+      return null;
+    }
+  }
+
+  /// Sync Dart state with native state (call after EventChannel reconnection)
+  Future<void> syncWithNativeState() async {
+    final nativeState = await getNativeState();
+    if (nativeState != null) {
+      final isPrepared = nativeState['isPrepared'] as bool? ?? false;
+      final isPlayingNative = nativeState['isPlaying'] as bool? ?? false;
+      final position = nativeState['position'] as int? ?? 0;
+      final duration = nativeState['duration'] as int? ?? 0;
+
+      // Update Dart state to match native
+      if (isPlayingNative) {
+        _stateController.add(VibeAudioState.playing);
+      } else if (isPrepared) {
+        _stateController.add(VibeAudioState.paused);
+      } else {
+        _stateController.add(VibeAudioState.idle);
+      }
+
+      _positionController.add(Duration(milliseconds: position));
+      _durationController.add(Duration(milliseconds: duration));
+
+      Log.audio.d('VibeAudio: Synced with native - prepared=$isPrepared, playing=$isPlayingNative');
+    }
+  }
+
   int? _audioSessionId;
   int? get audioSessionId => _audioSessionId;
 
@@ -206,6 +260,10 @@ class VibeAudioService {
       await _loadDeviceCapabilities();
       _isInitialized = true;
     }
+
+    // Sync Dart state with native state after EventChannel setup
+    // This ensures our cached state matches what native engine thinks
+    await syncWithNativeState();
 
     Log.audio.d('VibeAudioService initialized successfully');
   }
@@ -256,9 +314,20 @@ class VibeAudioService {
 
   /// Cleanup existing EventChannel subscriptions
   Future<void> _cleanupEventChannels() async {
-    await _eventSubscription?.cancel();
+    // Wrap in try-catch because canceling a stream that was never properly
+    // subscribed (e.g., after Activity recreation) throws PlatformException
+    try {
+      await _eventSubscription?.cancel();
+    } catch (e) {
+      Log.audio.d('VibeAudio: Event subscription cancel: $e');
+    }
     _eventSubscription = null;
-    await _pulseSubscription?.cancel();
+
+    try {
+      await _pulseSubscription?.cancel();
+    } catch (e) {
+      Log.audio.d('VibeAudio: Pulse subscription cancel: $e');
+    }
     _pulseSubscription = null;
   }
 
@@ -776,6 +845,426 @@ class VibeAudioService {
 
   //endregion
 
+  //region Queue Management
+
+  // Queue state
+  List<Song> _queue = [];
+  List<int> _shuffleIndices = [];
+  int _currentIndex = -1;
+  bool _shuffleMode = false;
+  LoopMode _loopMode = LoopMode.off;
+
+  // Queue streams
+  final _currentSongController = BehaviorSubject<Song?>.seeded(null);
+  final _currentIndexController = BehaviorSubject<int>.seeded(-1);
+  final _queueController = BehaviorSubject<List<Song>>.seeded([]);
+  final _shuffleModeController = BehaviorSubject<bool>.seeded(false);
+  final _loopModeController = BehaviorSubject<LoopMode>.seeded(LoopMode.off);
+
+  Stream<Song?> get currentSongStream => _currentSongController.stream;
+  Stream<int> get currentIndexStream => _currentIndexController.stream;
+  Stream<List<Song>> get queueStream => _queueController.stream;
+  Stream<bool> get shuffleModeStream => _shuffleModeController.stream;
+  Stream<LoopMode> get loopModeStream => _loopModeController.stream;
+
+  Song? get currentSong => _currentSongController.value;
+  int get currentIndex => _currentIndex;
+  List<Song> get queue => List.unmodifiable(_queue);
+  bool get shuffleMode => _shuffleMode;
+  LoopMode get loopMode => _loopMode;
+
+  /// Set the playback queue
+  Future<void> setQueue(List<Song> songs, {int initialIndex = 0, bool autoPlay = true}) async {
+    if (songs.isEmpty) {
+      Log.audio.d('VibeAudio: setQueue called with empty list');
+      return;
+    }
+
+    _queue = List.from(songs);
+    _queueController.add(List.unmodifiable(_queue));
+
+    // Generate shuffle indices if shuffle is enabled
+    if (_shuffleMode) {
+      _generateShuffleIndices(initialIndex);
+    }
+
+    Log.audio.d('VibeAudio: Queue set with ${songs.length} songs, starting at index $initialIndex, autoPlay=$autoPlay');
+
+    if (autoPlay) {
+      // Play the initial song
+      await playAtIndex(initialIndex);
+    } else {
+      // Just prepare the track without playing
+      await prepareAtIndex(initialIndex);
+    }
+  }
+
+  /// Prepare a track at index without starting playback
+  Future<bool> prepareAtIndex(int index) async {
+    if (index < 0 || index >= _queue.length) {
+      Log.audio.d('VibeAudio: prepareAtIndex - invalid index $index (queue size: ${_queue.length})');
+      return false;
+    }
+
+    final song = _queue[index];
+    if (song.path == null) {
+      Log.audio.d('VibeAudio: prepareAtIndex - song has no path');
+      return false;
+    }
+
+    _currentIndex = index;
+    _currentIndexController.add(index);
+    _currentSongController.add(song);
+
+    Log.audio.d('VibeAudio: Preparing "${song.title}" at index $index');
+
+    // Prepare but don't play
+    return await prepare(song.path!);
+  }
+
+  /// Play song at specific index
+  Future<void> playAtIndex(int index) async {
+    if (index < 0 || index >= _queue.length) {
+      Log.audio.d('VibeAudio: playAtIndex - invalid index $index (queue size: ${_queue.length})');
+      return;
+    }
+
+    final song = _queue[index];
+    if (song.path == null) {
+      Log.audio.d('VibeAudio: playAtIndex - song has no path');
+      return;
+    }
+
+    _currentIndex = index;
+    _currentIndexController.add(index);
+    _currentSongController.add(song);
+
+    Log.audio.d('VibeAudio: Playing "${song.title}" at index $index');
+
+    // Prepare and play
+    final success = await prepare(song.path!);
+    if (success) {
+      await play();
+
+      // Prepare next track for gapless playback
+      _prepareNextTrackForGapless();
+    }
+  }
+
+  /// Skip to next track
+  Future<void> skipToNext() async {
+    if (_queue.isEmpty) return;
+
+    final nextIndex = _getNextIndex();
+    if (nextIndex != null) {
+      await playAtIndex(nextIndex);
+    } else {
+      Log.audio.d('VibeAudio: No next track (end of queue, loop off)');
+      await stop();
+    }
+  }
+
+  /// Skip to previous track
+  Future<void> skipToPrevious() async {
+    if (_queue.isEmpty) return;
+
+    // If we're more than 3 seconds into the song, restart it
+    if (position.inMilliseconds > 3000) {
+      await seekTo(Duration.zero);
+      return;
+    }
+
+    final prevIndex = _getPreviousIndex();
+    if (prevIndex != null) {
+      await playAtIndex(prevIndex);
+    } else {
+      // At the beginning, just restart current song
+      await seekTo(Duration.zero);
+    }
+  }
+
+  /// Add song to end of queue
+  void addToQueue(Song song) {
+    _queue.add(song);
+    _queueController.add(List.unmodifiable(_queue));
+    Log.audio.d('VibeAudio: Added "${song.title}" to queue (now ${_queue.length} songs)');
+
+    // Update shuffle indices if needed
+    if (_shuffleMode) {
+      _shuffleIndices.add(_queue.length - 1);
+    }
+  }
+
+  /// Add song to play next
+  void playNext(Song song) {
+    if (_currentIndex < 0 || _currentIndex >= _queue.length) {
+      addToQueue(song);
+      return;
+    }
+
+    _queue.insert(_currentIndex + 1, song);
+    _queueController.add(List.unmodifiable(_queue));
+    Log.audio.d('VibeAudio: Added "${song.title}" to play next');
+
+    // Update shuffle indices if in shuffle mode
+    if (_shuffleMode) {
+      // Shift indices that are >= insert position
+      for (int i = 0; i < _shuffleIndices.length; i++) {
+        if (_shuffleIndices[i] > _currentIndex) {
+          _shuffleIndices[i]++;
+        }
+      }
+      // Insert the new index after current position in shuffle order
+      final currentShufflePos = _shuffleIndices.indexOf(_currentIndex);
+      if (currentShufflePos >= 0) {
+        _shuffleIndices.insert(currentShufflePos + 1, _currentIndex + 1);
+      }
+    }
+
+    // Prepare for gapless if this is the next track
+    _prepareNextTrackForGapless();
+  }
+
+  /// Remove song from queue
+  void removeFromQueue(int index) {
+    if (index < 0 || index >= _queue.length) return;
+
+    final wasCurrentSong = index == _currentIndex;
+    _queue.removeAt(index);
+    _queueController.add(List.unmodifiable(_queue));
+
+    // Update indices
+    if (_shuffleMode) {
+      _shuffleIndices.remove(index);
+      for (int i = 0; i < _shuffleIndices.length; i++) {
+        if (_shuffleIndices[i] > index) {
+          _shuffleIndices[i]--;
+        }
+      }
+    }
+
+    if (index < _currentIndex) {
+      _currentIndex--;
+      _currentIndexController.add(_currentIndex);
+    }
+
+    Log.audio.d('VibeAudio: Removed song at index $index from queue');
+
+    // If we removed the current song, play the next one
+    if (wasCurrentSong && _queue.isNotEmpty) {
+      final nextIndex = _currentIndex.clamp(0, _queue.length - 1);
+      playAtIndex(nextIndex);
+    }
+  }
+
+  /// Move song in queue
+  void moveInQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex < 0 || newIndex >= _queue.length) return;
+    if (oldIndex == newIndex) return;
+
+    final song = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, song);
+    _queueController.add(List.unmodifiable(_queue));
+
+    // Update current index if affected
+    if (oldIndex == _currentIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+    _currentIndexController.add(_currentIndex);
+
+    Log.audio.d('VibeAudio: Moved song from $oldIndex to $newIndex');
+  }
+
+  /// Clear the queue
+  void clearQueue() {
+    _queue.clear();
+    _shuffleIndices.clear();
+    _currentIndex = -1;
+    _queueController.add([]);
+    _currentIndexController.add(-1);
+    _currentSongController.add(null);
+    Log.audio.d('VibeAudio: Queue cleared');
+  }
+
+  /// Set shuffle mode
+  void setShuffleMode(bool enabled) {
+    if (_shuffleMode == enabled) return;
+
+    _shuffleMode = enabled;
+    _shuffleModeController.add(enabled);
+
+    if (enabled && _queue.isNotEmpty) {
+      _generateShuffleIndices(_currentIndex);
+    }
+
+    Log.audio.d('VibeAudio: Shuffle ${enabled ? "enabled" : "disabled"}');
+  }
+
+  /// Set loop mode
+  void setLoopMode(LoopMode mode) {
+    _loopMode = mode;
+    _loopModeController.add(mode);
+    Log.audio.d('VibeAudio: Loop mode set to ${mode.name}');
+  }
+
+  /// Handle native auto-transition (native engine already started the next track)
+  /// We just need to update our queue state and prepare the NEXT track after that
+  Future<void> _onNativeAutoTransition() async {
+    Log.audio.d('VibeAudio: Handling native auto-transition');
+    Log.audio.d('VibeAudio: Current state before transition - index=$_currentIndex, queue.length=${_queue.length}');
+
+    // Advance to the next index (native already playing it)
+    final nextIndex = _getNextIndex();
+    Log.audio.d('VibeAudio: _getNextIndex() returned $nextIndex');
+
+    if (nextIndex != null && nextIndex < _queue.length) {
+      final newSong = _queue[nextIndex];
+      _currentIndex = nextIndex;
+      _currentIndexController.add(_currentIndex);
+      _currentSongController.add(newSong);
+
+      Log.audio.d('VibeAudio: Queue advanced to index $_currentIndex - "${newSong.title}" by ${newSong.artist}');
+
+      // Update state to playing (native is already playing)
+      _stateController.add(VibeAudioState.playing);
+      _positionController.add(Duration.zero);
+
+      // Now prepare the NEXT track (the one after the one that's now playing)
+      // This ensures continuous background playback
+      await _prepareNextTrackForGapless();
+    } else {
+      Log.audio.d('VibeAudio: No next track in queue after auto-transition (nextIndex=$nextIndex, queue.length=${_queue.length})');
+    }
+  }
+
+  /// Handle track completion (called when native engine signals completion)
+  Future<void> onTrackCompleted() async {
+    Log.audio.d('VibeAudio: Track completed, loopMode=$_loopMode');
+
+    if (_loopMode == LoopMode.one) {
+      // Repeat the same track
+      await seekTo(Duration.zero);
+      await play();
+      return;
+    }
+
+    // Try gapless transition first
+    final nextIndex = _getNextIndex();
+    if (nextIndex != null) {
+      final nextReady = await isNextTrackReady();
+      if (nextReady) {
+        // Gapless transition
+        final success = await transitionToNextTrack();
+        if (success) {
+          _currentIndex = nextIndex;
+          _currentIndexController.add(_currentIndex);
+          _currentSongController.add(_queue[_currentIndex]);
+          Log.audio.d('VibeAudio: Gapless transition to index $nextIndex');
+          _prepareNextTrackForGapless();
+          return;
+        }
+      }
+
+      // Fall back to regular playback
+      await playAtIndex(nextIndex);
+    } else {
+      Log.audio.d('VibeAudio: End of queue reached');
+      _stateController.add(VibeAudioState.stopped);
+    }
+  }
+
+  /// Get next track index respecting shuffle and loop modes
+  int? _getNextIndex() {
+    if (_queue.isEmpty) return null;
+
+    if (_shuffleMode) {
+      final currentShufflePos = _shuffleIndices.indexOf(_currentIndex);
+      if (currentShufflePos < _shuffleIndices.length - 1) {
+        return _shuffleIndices[currentShufflePos + 1];
+      } else if (_loopMode == LoopMode.all) {
+        return _shuffleIndices[0];
+      }
+      return null;
+    } else {
+      if (_currentIndex < _queue.length - 1) {
+        return _currentIndex + 1;
+      } else if (_loopMode == LoopMode.all) {
+        return 0;
+      }
+      return null;
+    }
+  }
+
+  /// Get previous track index
+  int? _getPreviousIndex() {
+    if (_queue.isEmpty) return null;
+
+    if (_shuffleMode) {
+      final currentShufflePos = _shuffleIndices.indexOf(_currentIndex);
+      if (currentShufflePos > 0) {
+        return _shuffleIndices[currentShufflePos - 1];
+      } else if (_loopMode == LoopMode.all) {
+        return _shuffleIndices.last;
+      }
+      return null;
+    } else {
+      if (_currentIndex > 0) {
+        return _currentIndex - 1;
+      } else if (_loopMode == LoopMode.all) {
+        return _queue.length - 1;
+      }
+      return null;
+    }
+  }
+
+  /// Generate shuffle indices with current song first
+  void _generateShuffleIndices(int currentIndex) {
+    _shuffleIndices = List.generate(_queue.length, (i) => i);
+
+    // Remove current index and shuffle the rest
+    if (currentIndex >= 0 && currentIndex < _queue.length) {
+      _shuffleIndices.remove(currentIndex);
+      _shuffleIndices.shuffle(Random());
+      _shuffleIndices.insert(0, currentIndex);
+    } else {
+      _shuffleIndices.shuffle(Random());
+    }
+
+    Log.audio.d('VibeAudio: Generated shuffle indices: $_shuffleIndices');
+  }
+
+  /// Prepare the next track for gapless playback
+  Future<void> _prepareNextTrackForGapless() async {
+    final nextIndex = _getNextIndex();
+    if (nextIndex == null) return;
+
+    final nextSong = _queue[nextIndex];
+    if (nextSong.path == null) return;
+
+    Log.audio.d('VibeAudio: Preparing next track for gapless: "${nextSong.title}"');
+    await prepareNextTrack(nextSong.path!);
+  }
+
+  /// Update a song in the queue (e.g., after tag editing)
+  void updateSongInQueue(Song updatedSong) {
+    for (int i = 0; i < _queue.length; i++) {
+      if (_queue[i].id == updatedSong.id) {
+        _queue[i] = updatedSong;
+        if (i == _currentIndex) {
+          _currentSongController.add(updatedSong);
+        }
+      }
+    }
+    _queueController.add(List.unmodifiable(_queue));
+  }
+
+  //endregion
+
   /// Dispose the service
   void dispose() {
     _eventSubscription?.cancel();
@@ -785,6 +1274,12 @@ class VibeAudioService {
     _durationController.close();
     _pulseController.close();
     _completionController.close();
+    // Queue controllers
+    _currentSongController.close();
+    _currentIndexController.close();
+    _queueController.close();
+    _shuffleModeController.close();
+    _loopModeController.close();
     _isInitialized = false;
   }
 
@@ -821,10 +1316,17 @@ class VibeAudioService {
         break;
 
       case 'completed':
-        _stateController.add(VibeAudioState.stopped);
-        _positionController.add(Duration.zero);
-        _completionController.add(null);  // Signal track completion
-        Log.audio.d('VibeAudio: Track completed - signaling completion stream');
+        Log.audio.d('VibeAudio: Track completed event received');
+        _completionController.add(null);  // Signal track completion for external listeners
+        // Handle completion internally (respects loop mode, advances queue)
+        onTrackCompleted();
+        break;
+
+      case 'autoTransition':
+        // Native engine auto-advanced to the next track without waiting for us
+        // We just need to update our queue state and prepare the NEXT track
+        Log.audio.d('VibeAudio: Auto-transition event received - native already playing next track');
+        _onNativeAutoTransition();
         break;
 
       case 'error':

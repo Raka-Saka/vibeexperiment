@@ -44,6 +44,12 @@ class VibeAudioHandler(private val context: Context) :
             sendEvent("completed", null)
         }
 
+        engine.onAutoTransition = {
+            // Native engine auto-advanced to next track without waiting for Flutter
+            // Flutter should advance its queue index and prepare the NEXT track
+            sendEvent("autoTransition", null)
+        }
+
         engine.onError = { error ->
             sendEvent("error", mapOf("message" to error))
         }
@@ -302,6 +308,21 @@ class VibeAudioHandler(private val context: Context) :
                     result.success(engine.isPitchEnabled())
                 }
 
+                // Add method to check if engine is actually prepared (for state sync)
+                "isPrepared" -> {
+                    result.success(engine.isPrepared())
+                }
+
+                // Get current native state for sync
+                "getNativeState" -> {
+                    result.success(mapOf(
+                        "isPrepared" to engine.isPrepared(),
+                        "isPlaying" to engine.isPlaying(),
+                        "position" to engine.getPosition(),
+                        "duration" to engine.getDuration()
+                    ))
+                }
+
                 else -> result.notImplemented()
             }
         } catch (e: Exception) {
@@ -312,11 +333,14 @@ class VibeAudioHandler(private val context: Context) :
 
     // EventChannel.StreamHandler for state events
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+        Log.d(TAG, "EventChannel onListen called")
         eventSink = events
         engine.setEventSink(events)
     }
 
     override fun onCancel(arguments: Any?) {
+        Log.d(TAG, "EventChannel onCancel called")
+        // Safely handle cancel - don't throw if already null
         eventSink = null
         engine.setEventSink(null)
     }
@@ -382,10 +406,13 @@ class VibeAudioHandler(private val context: Context) :
      */
     private class PulseStreamHandler(private val engine: VibeAudioEngine) : EventChannel.StreamHandler {
         override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+            Log.d(TAG, "PulseStreamHandler onListen called")
             engine.setPulseEventSink(events)
         }
 
         override fun onCancel(arguments: Any?) {
+            Log.d(TAG, "PulseStreamHandler onCancel called")
+            // Safely handle cancel - don't throw if already null
             engine.setPulseEventSink(null)
         }
     }
