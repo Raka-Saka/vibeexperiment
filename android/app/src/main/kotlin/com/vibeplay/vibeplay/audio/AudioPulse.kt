@@ -38,8 +38,9 @@ class AudioPulse {
         private const val BEAT_COOLDOWN_MS = 80L    // Faster beat detection
         private const val ENERGY_HISTORY_SIZE = 30  // Shorter history for faster response
 
-        // Update throttling
-        private const val MIN_UPDATE_INTERVAL_MS = 16L  // ~60fps max
+        // Update throttling - slightly faster than display refresh for minimal latency
+        // 10ms allows ~100 updates/sec, Flutter will take latest available data each frame
+        private const val MIN_UPDATE_INTERVAL_MS = 10L  // ~100fps to minimize sync delay
     }
 
     // Configuration
@@ -50,21 +51,24 @@ class AudioPulse {
     @Volatile
     private var enabled = false
 
-    // Sample buffer (circular)
-    private val sampleBuffer = FloatArray(FFT_SIZE)
+    // Track when disabled to release buffers after extended period
+    private var disabledTimestamp = 0L
+    private var buffersReleased = false
+    private val BUFFER_RELEASE_DELAY_MS = 30_000L  // Release after 30s disabled
+
+    // Sample buffer (circular) - nullable for memory management
+    private var sampleBuffer: FloatArray? = null
     private var sampleIndex = 0
     private var samplesCollected = 0
 
-    // FFT arrays
-    private val fftReal = FloatArray(FFT_SIZE)
-    private val fftImag = FloatArray(FFT_SIZE)
-    private val magnitudes = FloatArray(FFT_SIZE / 2)
-    private val prevMagnitudes = FloatArray(FFT_SIZE / 2)
+    // FFT arrays - nullable for memory management
+    private var fftReal: FloatArray? = null
+    private var fftImag: FloatArray? = null
+    private var magnitudes: FloatArray? = null
+    private var prevMagnitudes: FloatArray? = null
 
-    // Hamming window (pre-computed for performance)
-    private val hammingWindow = FloatArray(FFT_SIZE) { i ->
-        0.54f - 0.46f * cos(2.0 * PI * i / (FFT_SIZE - 1)).toFloat()
-    }
+    // Hamming window (pre-computed for performance) - nullable
+    private var hammingWindow: FloatArray? = null
 
     // Frequency bands (0.0 - 1.0, smoothed)
     private var subBass = 0f
@@ -127,16 +131,70 @@ class AudioPulse {
     }
 
     /**
+     * Allocate FFT buffers if needed. Called lazily when processing starts.
+     */
+    private fun ensureBuffersAllocated() {
+        if (buffersReleased || sampleBuffer == null) {
+            Log.d(TAG, "Allocating FFT buffers")
+            sampleBuffer = FloatArray(FFT_SIZE)
+            fftReal = FloatArray(FFT_SIZE)
+            fftImag = FloatArray(FFT_SIZE)
+            magnitudes = FloatArray(FFT_SIZE / 2)
+            prevMagnitudes = FloatArray(FFT_SIZE / 2)
+            hammingWindow = FloatArray(FFT_SIZE) { i ->
+                0.54f - 0.46f * cos(2.0 * PI * i / (FFT_SIZE - 1)).toFloat()
+            }
+            buffersReleased = false
+        }
+    }
+
+    /**
+     * Release FFT buffers to free memory. Called after extended disable period.
+     */
+    private fun releaseBuffers() {
+        if (!buffersReleased) {
+            Log.d(TAG, "Releasing FFT buffers to save memory")
+            sampleBuffer = null
+            fftReal = null
+            fftImag = null
+            magnitudes = null
+            prevMagnitudes = null
+            hammingWindow = null
+            buffersReleased = true
+            // Suggest GC to reclaim memory
+            System.gc()
+        }
+    }
+
+    /**
      * Enable/disable FFT analysis for battery optimization.
      * When disabled, processSamples() becomes a no-op.
+     * Buffers are released after being disabled for 30 seconds to save memory.
      */
     fun setEnabled(enable: Boolean) {
         if (enabled != enable) {
             enabled = enable
             Log.d(TAG, "AudioPulse ${if (enable) "enabled" else "disabled"}")
-            if (!enable) {
+            if (enable) {
+                // Re-enable - buffers will be allocated lazily on first processSamples
+                disabledTimestamp = 0L
+            } else {
+                // Disable - record timestamp to release buffers later
+                disabledTimestamp = System.currentTimeMillis()
                 // Reset values when disabled so visualizer shows idle state
                 reset()
+            }
+        }
+    }
+
+    /**
+     * Check if buffers should be released (called periodically from processSamples)
+     */
+    private fun checkBufferRelease() {
+        if (!enabled && !buffersReleased && disabledTimestamp > 0) {
+            val elapsed = System.currentTimeMillis() - disabledTimestamp
+            if (elapsed > BUFFER_RELEASE_DELAY_MS) {
+                releaseBuffers()
             }
         }
     }
@@ -144,7 +202,7 @@ class AudioPulse {
     fun isEnabled(): Boolean = enabled
 
     /**
-     * Reset all state
+     * Reset all state (but keep buffers allocated)
      */
     fun reset() {
         sampleIndex = 0
@@ -158,6 +216,11 @@ class AudioPulse {
         bassHistory.fill(0f)
         energyHistory.fill(0f)
         beatTimes.clear()
+
+        // Also reset buffer contents if allocated
+        sampleBuffer?.fill(0f)
+        magnitudes?.fill(0f)
+        prevMagnitudes?.fill(0f)
     }
 
     /**
@@ -165,7 +228,17 @@ class AudioPulse {
      */
     fun processSamples(samples: ShortArray) {
         // Skip processing if disabled (battery optimization)
-        if (!enabled) return
+        if (!enabled) {
+            // Periodically check if we should release buffers
+            checkBufferRelease()
+            return
+        }
+
+        // Ensure buffers are allocated (lazy initialization)
+        ensureBuffersAllocated()
+
+        // Get local reference to buffer (null safety)
+        val buffer = sampleBuffer ?: return
 
         // Convert to mono float and store
         var i = 0
@@ -181,7 +254,7 @@ class AudioPulse {
             sample /= channelCount
 
             // Store in circular buffer
-            sampleBuffer[sampleIndex] = sample
+            buffer[sampleIndex] = sample
             sampleIndex = (sampleIndex + 1) % FFT_SIZE
             samplesCollected++
 
@@ -195,7 +268,9 @@ class AudioPulse {
         }
 
         // Perform analysis when we have enough samples
-        if (samplesCollected >= FFT_SIZE / 4) {
+        // Use FFT_SIZE / 8 (256 samples = ~5.8ms at 44.1kHz) for faster response
+        // Previously FFT_SIZE / 4 (512 samples = ~11.6ms) added noticeable latency
+        if (samplesCollected >= FFT_SIZE / 8) {
             val now = System.currentTimeMillis()
             if (now - lastUpdateTime >= MIN_UPDATE_INTERVAL_MS) {
                 lastUpdateTime = now
@@ -252,30 +327,38 @@ class AudioPulse {
     //region Analysis
 
     private fun performAnalysis() {
+        // Get local references for null safety
+        val buffer = sampleBuffer ?: return
+        val real = fftReal ?: return
+        val imag = fftImag ?: return
+        val mags = magnitudes ?: return
+        val prevMags = prevMagnitudes ?: return
+        val window = hammingWindow ?: return
+
         // Copy samples to FFT buffer with windowing
         for (i in 0 until FFT_SIZE) {
             val srcIndex = (sampleIndex + i) % FFT_SIZE
-            fftReal[i] = sampleBuffer[srcIndex] * hammingWindow[i]
-            fftImag[i] = 0f
+            real[i] = buffer[srcIndex] * window[i]
+            imag[i] = 0f
         }
 
         // Perform FFT
-        fft(fftReal, fftImag, FFT_SIZE)
+        fft(real, imag, FFT_SIZE)
 
         // Calculate magnitudes (convert to dB scale for better visualization)
         var maxMag = 0f
         for (i in 0 until FFT_SIZE / 2) {
-            val re = fftReal[i]
-            val im = fftImag[i]
+            val re = real[i]
+            val im = imag[i]
             val mag = sqrt(re * re + im * im)
-            magnitudes[i] = mag
+            mags[i] = mag
             maxMag = max(maxMag, mag)
         }
 
         // Normalize
         if (maxMag > 0.001f) {
-            for (i in magnitudes.indices) {
-                magnitudes[i] = (magnitudes[i] / maxMag).coerceIn(0f, 1f)
+            for (i in mags.indices) {
+                mags[i] = (mags[i] / maxMag).coerceIn(0f, 1f)
             }
         }
 
@@ -298,12 +381,13 @@ class AudioPulse {
         buildSpectrum()
 
         // Store magnitudes for next flux calculation
-        System.arraycopy(magnitudes, 0, prevMagnitudes, 0, magnitudes.size)
+        System.arraycopy(mags, 0, prevMags, 0, mags.size)
 
         samplesCollected = 0
     }
 
     private fun extractFrequencyBands() {
+        val mags = magnitudes ?: return
         val binWidth = sampleRate.toFloat() / FFT_SIZE
 
         var subBassSum = 0f; var subBassCount = 0
@@ -316,7 +400,7 @@ class AudioPulse {
 
         for (i in 1 until FFT_SIZE / 2) {
             val freq = i * binWidth
-            val mag = magnitudes[i]
+            val mag = mags[i]
 
             when {
                 freq < SUB_BASS_MAX -> { subBassSum += mag; subBassCount++ }
@@ -354,11 +438,13 @@ class AudioPulse {
     }
 
     private fun calculateEnergy() {
+        val buffer = sampleBuffer ?: return
+
         // RMS energy
         var sum = 0f
         for (i in 0 until FFT_SIZE) {
             val idx = (sampleIndex + i) % FFT_SIZE
-            sum += sampleBuffer[idx] * sampleBuffer[idx]
+            sum += buffer[idx] * buffer[idx]
         }
         val rms = sqrt(sum / FFT_SIZE)
 
@@ -445,19 +531,24 @@ class AudioPulse {
     }
 
     private fun calculateFlux() {
+        val mags = magnitudes ?: return
+        val prevMags = prevMagnitudes ?: return
+
         // Spectral flux = sum of positive differences
         var fluxSum = 0f
-        for (i in magnitudes.indices) {
-            val diff = magnitudes[i] - prevMagnitudes[i]
+        for (i in mags.indices) {
+            val diff = mags[i] - prevMags[i]
             if (diff > 0) {
                 fluxSum += diff * diff  // Square for emphasis
             }
         }
-        val newFlux = sqrt(fluxSum / magnitudes.size)
+        val newFlux = sqrt(fluxSum / mags.size)
         flux = lerp(flux, newFlux.coerceIn(0f, 1f), smoothMed)
     }
 
     private fun calculateCentroid() {
+        val mags = magnitudes ?: return
+
         // Spectral centroid = weighted average of frequencies
         var weightedSum = 0f
         var magSum = 0f
@@ -465,7 +556,7 @@ class AudioPulse {
 
         for (i in 1 until FFT_SIZE / 2) {
             val freq = i * binWidth
-            val mag = magnitudes[i]
+            val mag = mags[i]
             weightedSum += freq * mag
             magSum += mag
         }
@@ -479,6 +570,8 @@ class AudioPulse {
     }
 
     private fun buildSpectrum() {
+        val mags = magnitudes ?: return
+
         // Map FFT bins to spectrum bands (logarithmic distribution)
         val maxBin = FFT_SIZE / 2
 
@@ -494,7 +587,7 @@ class AudioPulse {
             var sum = 0f
             var count = 0
             for (i in lowBin until highBin) {
-                sum += magnitudes[i]
+                sum += mags[i]
                 count++
             }
 

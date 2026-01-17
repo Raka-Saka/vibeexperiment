@@ -13,6 +13,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.*
 
 /**
@@ -105,11 +107,19 @@ class VibeAudioEngine(private val context: Context) {
     // State
     enum class State { IDLE, PREPARING, READY, PLAYING, PAUSED, STOPPED, ERROR }
 
+    // MediaCodec lifecycle states for safe operations
+    private enum class CodecState { UNINITIALIZED, CONFIGURED, STARTED, FLUSHED, RELEASED }
+
     private var state = State.IDLE
     private val isPlaying = AtomicBoolean(false)
     private val isPrepared = AtomicBoolean(false)
 
-    // Audio components
+    // Thread synchronization lock for audio components
+    // All access to mediaCodec, audioTrack, mediaExtractor must be synchronized
+    private val audioLock = ReentrantLock()
+    private var codecState = CodecState.UNINITIALIZED
+
+    // Audio components - MUST be accessed within audioLock
     private var mediaExtractor: MediaExtractor? = null
     private var mediaCodec: MediaCodec? = null
     private var audioTrack: AudioTrack? = null
@@ -262,48 +272,51 @@ class VibeAudioEngine(private val context: Context) {
             release()
             setState(State.PREPARING)
 
-            // Create and configure MediaExtractor
-            mediaExtractor = MediaExtractor().apply {
-                if (path.startsWith("content://") || path.startsWith("file://")) {
-                    setDataSource(context, Uri.parse(path), null)
-                } else {
-                    setDataSource(path)
+            audioLock.withLock {
+                // Create and configure MediaExtractor
+                mediaExtractor = MediaExtractor().apply {
+                    if (path.startsWith("content://") || path.startsWith("file://")) {
+                        setDataSource(context, Uri.parse(path), null)
+                    } else {
+                        setDataSource(path)
+                    }
                 }
+
+                // Find audio track
+                val audioTrackIndex = findAudioTrack()
+                if (audioTrackIndex < 0) {
+                    Log.e(TAG, "No audio track found")
+                    setState(State.ERROR)
+                    return false
+                }
+
+                mediaExtractor?.selectTrack(audioTrackIndex)
+                val format = mediaExtractor?.getTrackFormat(audioTrackIndex)
+
+                // Get audio properties
+                sampleRate = format?.getInteger(MediaFormat.KEY_SAMPLE_RATE) ?: SAMPLE_RATE
+                channelCount = format?.getInteger(MediaFormat.KEY_CHANNEL_COUNT) ?: 2
+                durationMs = (format?.getLong(MediaFormat.KEY_DURATION) ?: 0) / 1000
+
+                Log.d(TAG, "Audio: ${sampleRate}Hz, ${channelCount}ch, ${durationMs}ms")
+                onDurationChanged?.invoke(durationMs)
+
+                // Create MediaCodec decoder
+                val mime = format?.getString(MediaFormat.KEY_MIME) ?: "audio/mpeg"
+                mediaCodec = MediaCodec.createDecoderByType(mime).apply {
+                    configure(format, null, null, 0)
+                }
+                codecState = CodecState.CONFIGURED
+
+                // Create AudioTrack
+                val minBufferSize = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    if (channelCount == 1) AudioFormat.CHANNEL_OUT_MONO else CHANNEL_CONFIG,
+                    AUDIO_FORMAT
+                )
+
+                audioTrack = buildOptimizedAudioTrack(sampleRate, channelCount, minBufferSize)
             }
-
-            // Find audio track
-            val audioTrackIndex = findAudioTrack()
-            if (audioTrackIndex < 0) {
-                Log.e(TAG, "No audio track found")
-                setState(State.ERROR)
-                return false
-            }
-
-            mediaExtractor?.selectTrack(audioTrackIndex)
-            val format = mediaExtractor?.getTrackFormat(audioTrackIndex)
-
-            // Get audio properties
-            sampleRate = format?.getInteger(MediaFormat.KEY_SAMPLE_RATE) ?: SAMPLE_RATE
-            channelCount = format?.getInteger(MediaFormat.KEY_CHANNEL_COUNT) ?: 2
-            durationMs = (format?.getLong(MediaFormat.KEY_DURATION) ?: 0) / 1000
-
-            Log.d(TAG, "Audio: ${sampleRate}Hz, ${channelCount}ch, ${durationMs}ms")
-            onDurationChanged?.invoke(durationMs)
-
-            // Create MediaCodec decoder
-            val mime = format?.getString(MediaFormat.KEY_MIME) ?: "audio/mpeg"
-            mediaCodec = MediaCodec.createDecoderByType(mime).apply {
-                configure(format, null, null, 0)
-            }
-
-            // Create AudioTrack
-            val minBufferSize = AudioTrack.getMinBufferSize(
-                sampleRate,
-                if (channelCount == 1) AudioFormat.CHANNEL_OUT_MONO else CHANNEL_CONFIG,
-                AUDIO_FORMAT
-            )
-
-            audioTrack = buildOptimizedAudioTrack(sampleRate, channelCount, minBufferSize)
 
             // Initialize AudioPulse with correct sample rate
             audioPulse.configure(sampleRate, channelCount)
@@ -353,19 +366,44 @@ class VibeAudioEngine(private val context: Context) {
         Log.d(TAG, "Starting playback")
         isPlaying.set(true)
 
-        // Only call start() on MediaCodec if it's not already in Executing state
-        // After flush(), the codec is in Flushed sub-state, we just need to restart the loop
-        try {
-            mediaCodec?.start()
-        } catch (e: IllegalStateException) {
-            // Codec might already be started (after flush), that's OK
-            Log.d(TAG, "MediaCodec already started or in valid state: ${e.message}")
-        }
+        audioLock.withLock {
+            // Start MediaCodec based on its current state
+            try {
+                when (codecState) {
+                    CodecState.CONFIGURED -> {
+                        mediaCodec?.start()
+                        codecState = CodecState.STARTED
+                        Log.d(TAG, "MediaCodec started from CONFIGURED state")
+                    }
+                    CodecState.FLUSHED -> {
+                        // After flush, codec is still in executing state, just needs to continue
+                        // Some devices may need start() call, others don't
+                        try {
+                            mediaCodec?.start()
+                        } catch (e: IllegalStateException) {
+                            // Already in executing state - this is fine
+                            Log.d(TAG, "MediaCodec already in executing state after flush")
+                        }
+                        codecState = CodecState.STARTED
+                    }
+                    CodecState.STARTED -> {
+                        Log.d(TAG, "MediaCodec already started")
+                    }
+                    else -> {
+                        Log.w(TAG, "MediaCodec in unexpected state: $codecState")
+                    }
+                }
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "Failed to start MediaCodec: ${e.message}", e)
+                isPlaying.set(false)
+                return
+            }
 
-        // Ensure AudioTrack is playing
-        audioTrack?.let { track ->
-            if (track.playState != android.media.AudioTrack.PLAYSTATE_PLAYING) {
-                track.play()
+            // Ensure AudioTrack is playing
+            audioTrack?.let { track ->
+                if (track.playState != android.media.AudioTrack.PLAYSTATE_PLAYING) {
+                    track.play()
+                }
             }
         }
 
@@ -386,7 +424,10 @@ class VibeAudioEngine(private val context: Context) {
 
         Log.d(TAG, "Pausing")
         isPlaying.set(false)
-        audioTrack?.pause()
+
+        audioLock.withLock {
+            audioTrack?.pause()
+        }
 
         // Release WakeLock when paused (user explicitly paused)
         releaseWakeLock()
@@ -411,7 +452,10 @@ class VibeAudioEngine(private val context: Context) {
 
         Log.d(TAG, "Resuming")
         isPlaying.set(true)
-        audioTrack?.play()
+
+        audioLock.withLock {
+            audioTrack?.play()
+        }
 
         // Restart playback thread if needed
         if (playbackThread?.isAlive != true) {
@@ -434,8 +478,19 @@ class VibeAudioEngine(private val context: Context) {
         playbackThread?.join(1000)
         playbackThread = null
 
-        audioTrack?.stop()
-        mediaCodec?.stop()
+        audioLock.withLock {
+            try {
+                audioTrack?.stop()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping AudioTrack: ${e.message}")
+            }
+            try {
+                mediaCodec?.stop()
+                codecState = CodecState.CONFIGURED
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping MediaCodec: ${e.message}")
+            }
+        }
 
         // Abandon audio focus when stopping
         abandonAudioFocus()
@@ -460,8 +515,15 @@ class VibeAudioEngine(private val context: Context) {
         playbackThread?.join(500)
         playbackThread = null
 
-        mediaExtractor?.seekTo(positionMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-        mediaCodec?.flush()
+        audioLock.withLock {
+            mediaExtractor?.seekTo(positionMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            try {
+                mediaCodec?.flush()
+                codecState = CodecState.FLUSHED
+            } catch (e: Exception) {
+                Log.e(TAG, "Error flushing MediaCodec: ${e.message}")
+            }
+        }
         pitchShifter.reset()  // Reset pitch shifter state on seek
         positionUs.set(positionMs * 1000)
 
@@ -771,7 +833,7 @@ class VibeAudioEngine(private val context: Context) {
             // Codec was released - this is expected when crossfade completes
             Log.d(TAG, "Crossfade playback loop: codec released (expected): ${e.message}")
         } catch (e: Exception) {
-            Log.e(TAG, "Crossfade playback loop error: ${e.message}")
+            Log.e(TAG, "Crossfade playback loop error: ${e.message}", e)
         }
 
         Log.d(TAG, "Crossfade playback loop ended")
@@ -1182,27 +1244,30 @@ class VibeAudioEngine(private val context: Context) {
         playbackThread?.join(1000)
         playbackThread = null
 
-        try {
-            audioTrack?.stop()
-            audioTrack?.release()
-            audioTrack = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing AudioTrack: ${e.message}")
-        }
+        audioLock.withLock {
+            try {
+                audioTrack?.stop()
+                audioTrack?.release()
+                audioTrack = null
+            } catch (e: Exception) {
+                Log.e(TAG, "Error releasing AudioTrack: ${e.message}")
+            }
 
-        try {
-            mediaCodec?.stop()
-            mediaCodec?.release()
-            mediaCodec = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing MediaCodec: ${e.message}")
-        }
+            try {
+                mediaCodec?.stop()
+                mediaCodec?.release()
+                mediaCodec = null
+                codecState = CodecState.RELEASED
+            } catch (e: Exception) {
+                Log.e(TAG, "Error releasing MediaCodec: ${e.message}")
+            }
 
-        try {
-            mediaExtractor?.release()
-            mediaExtractor = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing MediaExtractor: ${e.message}")
+            try {
+                mediaExtractor?.release()
+                mediaExtractor = null
+            } catch (e: Exception) {
+                Log.e(TAG, "Error releasing MediaExtractor: ${e.message}")
+            }
         }
 
         setState(State.IDLE)
@@ -1213,91 +1278,108 @@ class VibeAudioEngine(private val context: Context) {
     //region Playback Loop
 
     private fun playbackLoop() {
+        // Get local references with lock - these are safe to use throughout loop
+        // as long as we handle the case where they may have been released
+        val codec: MediaCodec
+        val extractor: MediaExtractor
+        val track: AudioTrack
 
-        val codec = mediaCodec ?: run {
-            Log.e(TAG, "Playback loop: MediaCodec is null!")
-            return
-        }
-        val extractor = mediaExtractor ?: run {
-            Log.e(TAG, "Playback loop: MediaExtractor is null!")
-            return
-        }
-        val track = audioTrack ?: run {
-            Log.e(TAG, "Playback loop: AudioTrack is null!")
-            return
+        audioLock.withLock {
+            codec = mediaCodec ?: run {
+                Log.e(TAG, "Playback loop: MediaCodec is null!")
+                return
+            }
+            extractor = mediaExtractor ?: run {
+                Log.e(TAG, "Playback loop: MediaExtractor is null!")
+                return
+            }
+            track = audioTrack ?: run {
+                Log.e(TAG, "Playback loop: AudioTrack is null!")
+                return
+            }
         }
 
         val bufferInfo = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
 
-        while (isPlaying.get() && !outputDone) {
-            // Feed input to decoder
-            if (!inputDone) {
-                val inputIndex = codec.dequeueInputBuffer(10000)
-                if (inputIndex >= 0) {
-                    val inputBuffer = codec.getInputBuffer(inputIndex)
-                    if (inputBuffer != null) {
-                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                        if (sampleSize < 0) {
-                            codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                            inputDone = true
-                            Log.d(TAG, "Input EOS")
-                        } else {
-                            val presentationTimeUs = extractor.sampleTime
-                            codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
-                            extractor.advance()
+        try {
+            while (isPlaying.get() && !outputDone) {
+                // Feed input to decoder
+                if (!inputDone) {
+                    val inputIndex = codec.dequeueInputBuffer(10000)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = codec.getInputBuffer(inputIndex)
+                        if (inputBuffer != null) {
+                            val sampleSize = extractor.readSampleData(inputBuffer, 0)
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                inputDone = true
+                                Log.d(TAG, "Input EOS")
+                            } else {
+                                val presentationTimeUs = extractor.sampleTime
+                                codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
+                                extractor.advance()
+                            }
                         }
+                    }
+                }
+
+                // Get decoded output
+                val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
+                when {
+                    outputIndex >= 0 -> {
+                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            outputDone = true
+                        }
+
+                        val outputBuffer = codec.getOutputBuffer(outputIndex)
+                        if (outputBuffer != null && bufferInfo.size > 0) {
+                            // THIS IS WHERE THE MAGIC HAPPENS!
+                            // We have direct access to PCM data
+                            processPcmData(outputBuffer, bufferInfo.size)
+
+                            // Write to AudioTrack for playback
+                            val audioData = ByteArray(bufferInfo.size)
+                            outputBuffer.get(audioData)
+                            outputBuffer.rewind()
+
+                            // Apply DSP effects (EQ, reverb) if enabled
+                            val processedData = applyDSP(audioData)
+
+                            // Apply pitch shifting if enabled
+                            val finalData = applyPitchShift(processedData)
+
+                            if (finalData.isNotEmpty()) {
+                                track.write(finalData, 0, finalData.size)
+                            }
+
+                            // Update position
+                            positionUs.set(bufferInfo.presentationTimeUs)
+                        }
+
+                        codec.releaseOutputBuffer(outputIndex, false)
+
+                        // Send position update (throttled)
+                        if (System.currentTimeMillis() % 250 < 20) {
+                            mainHandler.post {
+                                onPositionChanged?.invoke(positionUs.get() / 1000)
+                            }
+                        }
+                    }
+                    outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        // Format changed, no action needed
                     }
                 }
             }
-
-            // Get decoded output
-            val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
-            when {
-                outputIndex >= 0 -> {
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        outputDone = true
-                    }
-
-                    val outputBuffer = codec.getOutputBuffer(outputIndex)
-                    if (outputBuffer != null && bufferInfo.size > 0) {
-                        // THIS IS WHERE THE MAGIC HAPPENS!
-                        // We have direct access to PCM data
-                        processPcmData(outputBuffer, bufferInfo.size)
-
-                        // Write to AudioTrack for playback
-                        val audioData = ByteArray(bufferInfo.size)
-                        outputBuffer.get(audioData)
-                        outputBuffer.rewind()
-
-                        // Apply DSP effects (EQ, reverb) if enabled
-                        val processedData = applyDSP(audioData)
-
-                        // Apply pitch shifting if enabled
-                        val finalData = applyPitchShift(processedData)
-
-                        if (finalData.isNotEmpty()) {
-                            track.write(finalData, 0, finalData.size)
-                        }
-
-                        // Update position
-                        positionUs.set(bufferInfo.presentationTimeUs)
-                    }
-
-                    codec.releaseOutputBuffer(outputIndex, false)
-
-                    // Send position update (throttled)
-                    if (System.currentTimeMillis() % 250 < 20) {
-                        mainHandler.post {
-                            onPositionChanged?.invoke(positionUs.get() / 1000)
-                        }
-                    }
-                }
-                outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    // Format changed, no action needed
-                }
-            }
+        } catch (e: IllegalStateException) {
+            // Codec was released or in wrong state - this can happen during
+            // crossfade transitions or rapid play/pause
+            Log.d(TAG, "Playback loop: codec state error (expected during transitions): ${e.message}")
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "Playback loop error: ${e.message}", e)
+            return
         }
 
         if (outputDone && isPlaying.get()) {
@@ -1358,31 +1440,42 @@ class VibeAudioEngine(private val context: Context) {
             playbackThread?.join(500)
             playbackThread = null
 
-            // Release current track resources
-            mediaCodec?.stop()
-            mediaCodec?.release()
-            mediaExtractor?.release()
+            audioLock.withLock {
+                // Release current track resources
+                try {
+                    mediaCodec?.stop()
+                    mediaCodec?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error releasing current codec: ${e.message}")
+                }
+                try {
+                    mediaExtractor?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error releasing current extractor: ${e.message}")
+                }
 
-            // Move next track to current
-            mediaExtractor = nextMediaExtractor
-            mediaCodec = nextMediaCodec
-            sampleRate = nextSampleRate
-            channelCount = nextChannelCount
-            durationMs = nextDurationMs
+                // Move next track to current
+                mediaExtractor = nextMediaExtractor
+                mediaCodec = nextMediaCodec
+                sampleRate = nextSampleRate
+                channelCount = nextChannelCount
+                durationMs = nextDurationMs
 
-            // Clear next track references (but keep extractor/codec since we moved them)
-            nextMediaExtractor = null
-            nextMediaCodec = null
-            nextPrepared.set(false)
-            nextDurationMs = 0
+                // Clear next track references (but keep extractor/codec since we moved them)
+                nextMediaExtractor = null
+                nextMediaCodec = null
+                nextPrepared.set(false)
+                nextDurationMs = 0
 
-            // Reset position
-            positionUs.set(0)
+                // Reset position
+                positionUs.set(0)
 
-            // CRITICAL: Start the codec - it was only configured in prepareNextTrack()
-            // Without this, the playback loop will fail because codec is not in EXECUTING state
-            mediaCodec?.start()
-            Log.d(TAG, "performAutoTransition: MediaCodec started")
+                // CRITICAL: Start the codec - it was only configured in prepareNextTrack()
+                // Without this, the playback loop will fail because codec is not in EXECUTING state
+                mediaCodec?.start()
+                codecState = CodecState.STARTED
+                Log.d(TAG, "performAutoTransition: MediaCodec started")
+            }
 
             // Notify duration change
             mainHandler.post {

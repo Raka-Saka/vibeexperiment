@@ -5,6 +5,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.util.Log
+import kotlinx.coroutines.*
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -129,15 +130,76 @@ class GenreClassifier(private val context: Context) {
     private var yamnetInterpreter: Interpreter? = null
     private var genreInterpreter: Interpreter? = null
     private var isInitialized = false
+    private var isInitializing = false
     private var hasYamnetModel = false
     private var hasGenreClassifier = false
     private var inputTensorIndex = 0
     private var embeddingOutputIndex = 1  // YAMNet's embedding output is typically index 1
 
     /**
-     * Initialize the TFLite interpreters (YAMNet + Genre Classifier)
+     * Initialize the TFLite interpreters asynchronously (RECOMMENDED).
+     * Loads models on background thread to avoid blocking UI.
+     *
+     * @param callback Called on main thread when initialization completes.
+     *                 Boolean parameter indicates success.
+     */
+    fun initAsync(callback: ((Boolean) -> Unit)? = null) {
+        if (isInitialized) {
+            callback?.invoke(hasYamnetModel || hasGenreClassifier)
+            return
+        }
+        if (isInitializing) {
+            Log.d(TAG, "Initialization already in progress")
+            return
+        }
+
+        isInitializing = true
+        CoroutineScope(Dispatchers.IO).launch {
+            val success = initInternal()
+            withContext(Dispatchers.Main) {
+                callback?.invoke(success)
+            }
+        }
+    }
+
+    /**
+     * Initialize the TFLite interpreters as a suspend function.
+     * Call from a coroutine context.
+     *
+     * @return true if at least one model was loaded successfully
+     */
+    suspend fun initSuspend(): Boolean = withContext(Dispatchers.IO) {
+        if (isInitialized) {
+            return@withContext hasYamnetModel || hasGenreClassifier
+        }
+        if (isInitializing) {
+            // Wait for ongoing initialization
+            while (isInitializing && !isInitialized) {
+                delay(50)
+            }
+            return@withContext hasYamnetModel || hasGenreClassifier
+        }
+        initInternal()
+    }
+
+    /**
+     * Initialize the TFLite interpreters (SYNCHRONOUS - blocks calling thread).
+     *
+     * WARNING: This loads ML models synchronously which can take 100-500ms.
+     * Prefer initAsync() or initSuspend() for better UX.
      */
     fun init(): Boolean {
+        if (isInitialized) {
+            return hasYamnetModel || hasGenreClassifier
+        }
+        Log.w(TAG, "Synchronous init() called - consider using initAsync() to avoid blocking")
+        return initInternal()
+    }
+
+    /**
+     * Internal initialization logic (called from any init method)
+     */
+    private fun initInternal(): Boolean {
         return try {
             val options = Interpreter.Options().apply {
                 setNumThreads(4)  // Use multiple threads for faster inference
@@ -199,17 +261,34 @@ class GenreClassifier(private val context: Context) {
             }
 
             isInitialized = true
+            isInitializing = false
             Log.d(TAG, "Initialization complete: YAMNet=$hasYamnetModel, GenreClassifier=$hasGenreClassifier")
             hasYamnetModel || hasGenreClassifier
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize: ${e.message}")
             isInitialized = true
+            isInitializing = false
             hasYamnetModel = false
             hasGenreClassifier = false
             false
         }
     }
+
+    /**
+     * Check if initialization is in progress
+     */
+    fun isInitializing(): Boolean = isInitializing
+
+    /**
+     * Check if initialization completed (regardless of success)
+     */
+    fun isInitialized(): Boolean = isInitialized
+
+    /**
+     * Check if ML models are available for classification
+     */
+    fun isReady(): Boolean = isInitialized && (hasYamnetModel || hasGenreClassifier)
 
     /**
      * Classify the genre of an audio file

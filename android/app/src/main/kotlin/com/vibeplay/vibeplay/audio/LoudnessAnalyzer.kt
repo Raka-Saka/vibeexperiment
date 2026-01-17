@@ -236,13 +236,18 @@ class LoudnessAnalyzer(private val context: Context) {
             Log.e(TAG, "Error analyzing file: ${e.message}", e)
             return@withContext null
         } finally {
+            // Cleanup errors are logged but not thrown - we're already returning
             try {
                 codec?.stop()
                 codec?.release()
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.v(TAG, "Codec cleanup: ${e.message}")
+            }
             try {
                 extractor?.release()
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.v(TAG, "Extractor cleanup: ${e.message}")
+            }
         }
     }
 
@@ -539,13 +544,18 @@ class LoudnessAnalyzer(private val context: Context) {
             Log.e(TAG, "Error detecting silence: ${e.message}", e)
             return@withContext null
         } finally {
+            // Cleanup errors are logged but not thrown - we're already returning
             try {
                 codec?.stop()
                 codec?.release()
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.v(TAG, "Codec cleanup: ${e.message}")
+            }
             try {
                 extractor?.release()
-            } catch (e: Exception) { /* ignore */ }
+            } catch (e: Exception) {
+                Log.v(TAG, "Extractor cleanup: ${e.message}")
+            }
         }
     }
 

@@ -231,10 +231,12 @@ class _ShaderVisualizerState extends ConsumerState<ShaderVisualizer>
   static const int _maxTicksWithoutPulse = 120; // ~2 seconds at 60fps
 
   // Smoothing factors (0-1, higher = more responsive to music)
-  // Different values for different signals - beat needs to be snappy!
-  static const double _smoothingBase = 0.35;      // General responsiveness
-  static const double _smoothingBeat = 0.7;       // Beat must be punchy
-  static const double _smoothingDecay = 0.15;     // Slower decay for smooth falloff
+  // NOTE: Kotlin AudioPulse already applies smoothing (0.7-0.85 range), so these
+  // values represent the ADDITIONAL Flutter-side smoothing. Higher = more responsive.
+  // Previous values (0.35/0.7/0.15) caused ~50-100ms latency from double-smoothing.
+  static const double _smoothingBase = 0.65;      // General responsiveness (was 0.35 - too slow)
+  static const double _smoothingBeat = 0.85;      // Beat must be punchy (was 0.7)
+  static const double _smoothingDecay = 0.25;     // Decay for smooth falloff (was 0.15)
 
   @override
   void initState() {

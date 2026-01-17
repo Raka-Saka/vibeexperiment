@@ -42,8 +42,8 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
         when (call.method) {
             "setAudioSessionId" -> {
                 val sessionId = call.argument<Int>("sessionId") ?: 0
-                setAudioSessionId(sessionId)
-                result.success(true)
+                val initResult = setAudioSessionId(sessionId)
+                result.success(initResult)
             }
             "setEnabled" -> {
                 val enabled = call.argument<Boolean>("enabled") ?: false
@@ -83,17 +83,36 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
         }
     }
 
-    private fun setAudioSessionId(sessionId: Int) {
+    /**
+     * Initialize audio effects for the given session ID.
+     * Returns a map with initialization status so Flutter knows what's available.
+     */
+    private fun setAudioSessionId(sessionId: Int): Map<String, Any> {
         if (sessionId == audioSessionId && (dynamicsEq != null || systemEqualizer != null)) {
-            return
+            return mapOf(
+                "success" to true,
+                "alreadyInitialized" to true,
+                "eqType" to if (isUsingDynamicsProcessing) "DynamicsProcessing" else "SystemEqualizer",
+                "bandCount" to if (isUsingDynamicsProcessing) NUM_BANDS else systemBandCount
+            )
         }
 
         release()
         audioSessionId = sessionId
 
+        var eqInitialized = false
+        var eqType = "None"
+        var eqBandCount = 0
+        var eqError: String? = null
+
         if (sessionId == 0) {
             Log.w(TAG, "Audio session ID is 0, effects may not work properly")
-            return
+            return mapOf(
+                "success" to false,
+                "error" to "Invalid audio session ID (0)",
+                "eqType" to "None",
+                "bandCount" to 0
+            )
         }
 
         // Try DynamicsProcessing first (Android 9+)
@@ -102,13 +121,18 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
                 dynamicsEq = DynamicsProcessingEqualizer()
                 if (dynamicsEq!!.initialize(sessionId)) {
                     isUsingDynamicsProcessing = true
+                    eqInitialized = true
+                    eqType = "DynamicsProcessing"
+                    eqBandCount = NUM_BANDS
                     Log.d(TAG, "Using DynamicsProcessing for 10-band EQ")
                 } else {
                     dynamicsEq = null
+                    eqError = "DynamicsProcessing initialization returned false"
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "DynamicsProcessing not available: ${e.message}")
                 dynamicsEq = null
+                eqError = "DynamicsProcessing exception: ${e.message}"
             }
         }
 
@@ -120,30 +144,56 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
                 }
                 systemBandCount = systemEqualizer?.numberOfBands?.toInt() ?: 5
                 isUsingDynamicsProcessing = false
+                eqInitialized = true
+                eqType = "SystemEqualizer"
+                eqBandCount = systemBandCount
+                eqError = null  // Clear any previous error since fallback succeeded
                 Log.d(TAG, "Using system equalizer with $systemBandCount bands")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize system equalizer: ${e.message}")
+                eqError = "System equalizer exception: ${e.message}"
             }
         }
 
         // Initialize bass boost
+        var bassBoostInitialized = false
         try {
             bassBoost = BassBoost(0, sessionId).apply {
                 enabled = false
             }
+            bassBoostInitialized = true
             Log.d(TAG, "BassBoost initialized")
         } catch (e: Exception) {
             Log.w(TAG, "BassBoost not available: ${e.message}")
         }
 
         // Initialize virtualizer
+        var virtualizerInitialized = false
         try {
             virtualizer = Virtualizer(0, sessionId).apply {
                 enabled = false
             }
+            virtualizerInitialized = true
             Log.d(TAG, "Virtualizer initialized")
         } catch (e: Exception) {
             Log.w(TAG, "Virtualizer not available: ${e.message}")
+        }
+
+        return mutableMapOf<String, Any>(
+            "success" to eqInitialized,
+            "eqType" to eqType,
+            "bandCount" to eqBandCount,
+            "isHardwareAccelerated" to (eqType == "DynamicsProcessing"),
+            "bassBoostAvailable" to bassBoostInitialized,
+            "virtualizerAvailable" to virtualizerInitialized
+        ).apply {
+            if (eqError != null && !eqInitialized) {
+                put("error", eqError!!)
+            }
+            // Include fallback info if we fell back from DynamicsProcessing
+            if (eqType == "SystemEqualizer" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                put("fallbackReason", "DynamicsProcessing unavailable, using system equalizer")
+            }
         }
     }
 
@@ -238,6 +288,10 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
         return try {
             if (bb.strengthSupported) {
                 val clampedStrength = strength.coerceIn(0, 1000)
+                // Log warning if value was clamped (helps debug Flutter layer issues)
+                if (clampedStrength != strength) {
+                    Log.w(TAG, "Bass boost strength clamped: $strength -> $clampedStrength (valid range: 0-1000)")
+                }
                 bb.setStrength(clampedStrength)
                 Log.d(TAG, "Set bass boost strength to $clampedStrength")
                 true
@@ -256,6 +310,10 @@ class EqualizerHandler : MethodChannel.MethodCallHandler {
         return try {
             if (virt.strengthSupported) {
                 val clampedStrength = strength.coerceIn(0, 1000)
+                // Log warning if value was clamped (helps debug Flutter layer issues)
+                if (clampedStrength != strength) {
+                    Log.w(TAG, "Virtualizer strength clamped: $strength -> $clampedStrength (valid range: 0-1000)")
+                }
                 virt.setStrength(clampedStrength)
                 Log.d(TAG, "Set virtualizer strength to $clampedStrength")
                 true

@@ -81,6 +81,16 @@ class Song extends Equatable {
     );
   }
 
+  /// Convert to JSON for persistence (e.g., saving playback queue state).
+  ///
+  /// NOTE: `artwork` is intentionally excluded from serialization because:
+  /// 1. Artwork bytes can be large (50KB-500KB per song), making queue
+  ///    serialization slow and storage-heavy for large playlists.
+  /// 2. Artwork can be re-fetched efficiently using `albumId` when needed.
+  /// 3. The artwork provider handles caching separately.
+  ///
+  /// When restoring from JSON, artwork will be null and should be loaded
+  /// on-demand via the artwork provider.
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
@@ -96,6 +106,7 @@ class Song extends Equatable {
     'bitrate': bitrate,
     'fileExtension': fileExtension,
     'size': size,
+    // artwork intentionally excluded - see doc comment above
   };
 
   factory Song.fromJson(Map<String, dynamic> json) => Song(

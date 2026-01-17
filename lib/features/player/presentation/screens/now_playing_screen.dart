@@ -108,11 +108,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
       );
     }
 
-    final artworkAsync = ref.watch(
-      artworkProvider((song.albumId ?? song.id, ArtworkType.AUDIO)),
-    );
-
-    // Extract colors from artwork - using ref.listen to avoid issues
+    // Extract colors from artwork using listen (not watch - we don't need the value in build)
+    // This avoids double-subscription that was causing unnecessary rebuilds
     ref.listen(
       artworkProvider((song.albumId ?? song.id, ArtworkType.AUDIO)),
       (previous, next) {
@@ -188,8 +185,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
 
                     const Spacer(),
 
-                    // Album art
-                    _buildAlbumArt(artworkAsync),
+                    // Album art (tap area for visualizer cycling)
+                    _buildAlbumArt(),
 
                     const Spacer(),
 
@@ -209,7 +206,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
                     const SizedBox(height: 24),
 
                     // Additional controls
-                    _buildAdditionalControls(playerState),
+                    _buildAdditionalControls(playerState, settings),
 
                     const SizedBox(height: 32),
                   ],
@@ -296,7 +293,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     );
   }
 
-  Widget _buildAlbumArt(AsyncValue<dynamic> artworkAsync) {
+  Widget _buildAlbumArt() {
     // All visualizers are now shader-based (full-screen background)
     // This widget handles tap gestures for visualizer cycling
     return GestureDetector(
@@ -649,9 +646,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen>
     ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.2);
   }
 
-  Widget _buildAdditionalControls(AppPlayerState playerState) {
+  Widget _buildAdditionalControls(AppPlayerState playerState, AppSettings settings) {
+    // Note: settings passed from parent to avoid duplicate ref.watch
     final eqState = ref.watch(equalizerProvider);
-    final settings = ref.watch(settingsProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),

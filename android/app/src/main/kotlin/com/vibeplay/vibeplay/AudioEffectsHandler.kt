@@ -8,10 +8,30 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Handles additional audio effects:
+ * Handles Android system audio effects:
  * - Reverb (PresetReverb and EnvironmentalReverb)
  *
- * Pitch and tempo are handled by just_audio directly.
+ * IMPORTANT: This uses Android's hardware audio effects API, which varies by device.
+ *
+ * REVERB IMPLEMENTATION NOTE:
+ * There are TWO reverb systems in VibePlay:
+ *
+ * 1. AudioDSP.kt (PREFERRED) - Software Schroeder reverb integrated with VibeAudioEngine.
+ *    - Consistent quality across all devices
+ *    - Works with native PCM pipeline
+ *    - Use setNativeReverbEnabled(), setNativeReverbMix(), setNativeReverbDecay()
+ *
+ * 2. This class (LEGACY/ALTERNATIVE) - Android PresetReverb/EnvironmentalReverb.
+ *    - Quality varies by device hardware
+ *    - Uses Android audio session effects
+ *    - Useful for devices where software reverb is too CPU-intensive
+ *
+ * RECOMMENDATION: Use AudioDSP reverb (via VibeAudioEngine) for consistent results.
+ * Only use this class if you need Android preset reverbs (Small Room, Hall, etc.)
+ * that the user specifically requests, or on low-end devices.
+ *
+ * WARNING: Do NOT enable both reverb systems simultaneously - they will compound
+ * and produce undesirable audio artifacts.
  */
 class AudioEffectsHandler : MethodChannel.MethodCallHandler {
     companion object {

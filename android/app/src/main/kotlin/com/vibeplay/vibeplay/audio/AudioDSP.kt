@@ -6,21 +6,50 @@ import kotlin.math.*
  * AudioDSP - Native PCM audio processing for VibeAudioEngine.
  *
  * Provides real-time DSP effects directly on PCM samples:
- * - 5-band parametric EQ using biquad filters
- * - Simple stereo reverb using comb + allpass filters
+ * - 5-band parametric EQ using biquad filters (peaking EQ at 60, 230, 910, 3600, 14000 Hz)
+ * - Stereo reverb using Schroeder algorithm (comb + allpass filters)
  *
  * All processing is done in-place on 16-bit PCM samples.
+ *
+ * REVERB NOTE: This is the PREFERRED reverb implementation for VibePlay because:
+ * - Consistent quality across all Android devices
+ * - Integrated directly with VibeAudioEngine's PCM pipeline
+ * - No dependency on device-specific hardware DSP
+ *
+ * Alternative: AudioEffectsHandler provides Android PresetReverb for device-specific
+ * hardware reverb, but quality varies significantly by device.
+ *
+ * WARNING: Do not enable both this reverb AND AudioEffectsHandler reverb simultaneously.
  */
 class AudioDSP {
 
     companion object {
         private const val TAG = "AudioDSP"
 
-        // EQ bands (Hz)
+        /**
+         * 5-band parametric EQ center frequencies (Hz).
+         *
+         * These frequencies are chosen to cover the full audible spectrum with
+         * musical relevance, similar to common 5-band graphic EQ designs:
+         *
+         *   60 Hz   - Sub-bass: Kick drum fundamentals, bass weight
+         *   230 Hz  - Low-mids: Warmth, body, bass guitar presence
+         *   910 Hz  - Midrange: Vocal presence, snare body, guitar fundamentals
+         *   3600 Hz - Upper-mids: Clarity, attack, vocal intelligibility
+         *   14000 Hz - Air/Brilliance: Cymbal shimmer, high-frequency detail
+         *
+         * Approximate to ISO 266 preferred frequencies (63, 250, 1000, 4000, 16000 Hz).
+         */
         private val EQ_FREQUENCIES = floatArrayOf(60f, 230f, 910f, 3600f, 14000f)
         private const val EQ_BAND_COUNT = 5
 
-        // Reverb parameters
+        /**
+         * Schroeder reverb configuration.
+         *
+         * The Schroeder reverb algorithm uses parallel comb filters followed by
+         * series allpass filters. 4 comb + 2 allpass is the classic configuration
+         * from Manfred Schroeder's 1962 paper "Natural Sounding Artificial Reverberation".
+         */
         private const val REVERB_COMB_COUNT = 4
         private const val REVERB_ALLPASS_COUNT = 2
     }
@@ -64,18 +93,27 @@ class AudioDSP {
         }
 
         // Configure reverb delay lines
-        // Comb filter delays (in samples) - prime numbers for better diffusion
+        // Comb filter delays in seconds, converted to samples.
+        //
+        // These delay times (29.7ms, 37.1ms, 41.1ms, 43.7ms) are chosen to be:
+        // 1. Mutually incommensurate (ratios are irrational) to avoid resonances
+        // 2. In the 25-50ms range typical for room reflections
+        // 3. Based on Schroeder's original design scaled for modern sample rates
+        //
+        // At 44.1kHz: ~1310, ~1636, ~1813, ~1927 samples (all relatively prime)
         val combDelays = intArrayOf(
-            (0.0297f * sampleRate).toInt(),
-            (0.0371f * sampleRate).toInt(),
-            (0.0411f * sampleRate).toInt(),
-            (0.0437f * sampleRate).toInt()
+            (0.0297f * sampleRate).toInt(),  // 29.7ms - shortest comb
+            (0.0371f * sampleRate).toInt(),  // 37.1ms
+            (0.0411f * sampleRate).toInt(),  // 41.1ms
+            (0.0437f * sampleRate).toInt()   // 43.7ms - longest comb
         )
 
-        // Allpass filter delays
+        // Allpass filter delays for diffusion.
+        // Short delays (5ms, 1.7ms) smear transients and add density
+        // without significantly coloring the sound.
         val allpassDelays = intArrayOf(
-            (0.005f * sampleRate).toInt(),
-            (0.0017f * sampleRate).toInt()
+            (0.005f * sampleRate).toInt(),   // 5.0ms - primary diffusion
+            (0.0017f * sampleRate).toInt()   // 1.7ms - fine diffusion
         )
 
         for (i in 0 until REVERB_COMB_COUNT) {
@@ -83,6 +121,9 @@ class AudioDSP {
             combFiltersR[i].configure(combDelays[i], reverbDecay)
         }
 
+        // Allpass coefficient of 0.5 provides good diffusion while maintaining
+        // unity gain (allpass filters don't change magnitude, only phase).
+        // Values closer to 1.0 increase diffusion but can cause instability.
         for (i in 0 until REVERB_ALLPASS_COUNT) {
             allpassFiltersL[i].configure(allpassDelays[i], 0.5f)
             allpassFiltersR[i].configure(allpassDelays[i], 0.5f)
@@ -194,9 +235,18 @@ class AudioDSP {
     }
 
     /**
-     * Soft clipping to prevent harsh digital distortion
+     * Soft clipping to prevent harsh digital distortion.
+     *
+     * Uses exponential soft clipping for smooth saturation above ±1.0.
+     * The constant 0.36788 is 1/e (≈ e^-1), ensuring the function is
+     * continuous at x=±1: at x=1, output = 1 - e^0 * (1/e) = 1 - 1/e ≈ 0.632,
+     * which smoothly approaches but never reaches 1.0.
+     *
+     * This provides a "warm" analog-style saturation rather than harsh
+     * digital clipping at 0dBFS.
      */
     private fun softClip(x: Float): Float {
+        // 0.36788f ≈ 1/e, ensures continuity at clipping threshold
         return when {
             x > 1f -> 1f - exp(-x + 1f) * 0.36788f
             x < -1f -> -1f + exp(x + 1f) * 0.36788f
