@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../services/audio_handler.dart';
 import '../../equalizer/presentation/equalizer_screen.dart';
 import '../../statistics/presentation/statistics_screen.dart';
@@ -17,10 +18,11 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(l10n.navSettings),
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -37,12 +39,12 @@ class SettingsScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             // Audio section
-            _buildSectionHeader(context, 'Audio'),
+            _buildSectionHeader(context, l10n.settingsSectionAudio),
             _buildSettingsTile(
               context,
               icon: Icons.equalizer_rounded,
-              title: 'Equalizer',
-              subtitle: 'Adjust audio frequencies',
+              title: l10n.settingsEqualizer,
+              subtitle: l10n.settingsEqualizerSubtitle,
               onTap: () {
                 Navigator.push(
                   context,
@@ -55,15 +57,15 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.speed_rounded,
-              title: 'Playback Speed',
+              title: l10n.settingsPlaybackSpeed,
               subtitle: settings.playbackSpeedLabel,
               onTap: () => _showPlaybackSpeedDialog(context, ref, settings),
             ),
             _buildSettingsTile(
               context,
               icon: Icons.graphic_eq_rounded,
-              title: 'Audio Quality',
-              subtitle: 'High quality (native decoding)',
+              title: l10n.settingsAudioQuality,
+              subtitle: l10n.settingsAudioQualityHigh,
               trailing: Icon(
                 Icons.check_circle_rounded,
                 color: AppTheme.primaryColor,
@@ -73,17 +75,17 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.compare_arrows_rounded,
-              title: 'Gapless Playback',
-              subtitle: 'Always enabled for seamless transitions',
+              title: l10n.settingsGaplessPlayback,
+              subtitle: l10n.settingsGaplessPlaybackSubtitle,
               trailing: Icon(
                 Icons.check_circle_rounded,
                 color: AppTheme.primaryColor,
               ),
               onTap: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Gapless playback is always enabled'),
-                    duration: Duration(seconds: 2),
+                  SnackBar(
+                    content: Text(l10n.toastGaplessAlwaysEnabled),
+                    duration: const Duration(seconds: 2),
                   ),
                 );
               },
@@ -91,7 +93,7 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.shuffle_rounded,
-              title: 'Crossfade',
+              title: l10n.settingsCrossfade,
               subtitle: _getCrossfadeModeLabel(settings),
               trailing: const Icon(
                 Icons.chevron_right_rounded,
@@ -102,7 +104,7 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.volume_up_rounded,
-              title: 'Volume Normalization',
+              title: l10n.settingsNormalization,
               subtitle: settings.normalizationModeLabel,
               trailing: const Icon(
                 Icons.chevron_right_rounded,
@@ -113,7 +115,7 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.spatial_audio_rounded,
-              title: 'Reverb',
+              title: l10n.settingsReverb,
               subtitle: settings.reverbLabel,
               trailing: const Icon(
                 Icons.chevron_right_rounded,
@@ -124,7 +126,7 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.music_note_rounded,
-              title: 'Pitch Adjustment',
+              title: l10n.settingsPitch,
               subtitle: settings.pitchLabel,
               trailing: const Icon(
                 Icons.chevron_right_rounded,
@@ -136,12 +138,12 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // Library section
-            _buildSectionHeader(context, 'Library'),
+            _buildSectionHeader(context, l10n.settingsSectionLibrary),
             _buildSettingsTile(
               context,
               icon: Icons.bar_chart_rounded,
-              title: 'Statistics',
-              subtitle: 'Play counts, listening time, smart playlists',
+              title: l10n.settingsStatistics,
+              subtitle: l10n.settingsStatisticsSubtitle,
               onTap: () {
                 Navigator.push(
                   context,
@@ -154,8 +156,8 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.auto_awesome,
-              title: 'AI Genre Detection',
-              subtitle: 'Batch classify songs by genre',
+              title: l10n.settingsAiGenre,
+              subtitle: l10n.settingsAiGenreSubtitle,
               onTap: () {
                 Navigator.push(
                   context,
@@ -168,21 +170,21 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.folder_rounded,
-              title: 'Rescan Library',
-              subtitle: 'Scan device for new music',
+              title: l10n.settingsRescan,
+              subtitle: l10n.settingsRescanSubtitle,
               onTap: () => _rescanLibrary(context, ref),
             ),
             _buildSettingsTile(
               context,
               icon: Icons.cleaning_services_rounded,
-              title: 'Clear Library Cache',
-              subtitle: 'Reset library data (files not deleted)',
+              title: l10n.settingsClearCache,
+              subtitle: l10n.settingsClearCacheSubtitle,
               onTap: () => _clearLibraryCache(context, ref),
             ),
             _buildSettingsTile(
               context,
               icon: Icons.sort_rounded,
-              title: 'Default Sort',
+              title: l10n.settingsDefaultSort,
               subtitle: settings.sortOrderLabel,
               onTap: () => _showSortDialog(context, ref, settings),
             ),
@@ -191,8 +193,8 @@ class SettingsScreen extends ConsumerWidget {
               icon: settings.sortAscending
                   ? Icons.arrow_upward_rounded
                   : Icons.arrow_downward_rounded,
-              title: 'Sort Direction',
-              subtitle: settings.sortAscending ? 'Ascending (A-Z)' : 'Descending (Z-A)',
+              title: l10n.settingsSortDirection,
+              subtitle: settings.sortAscending ? l10n.settingsSortAscending : l10n.settingsSortDescending,
               onTap: () {
                 HapticFeedback.selectionClick();
                 ref.read(settingsProvider.notifier).toggleSortAscending();
@@ -201,10 +203,10 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.comment_rounded,
-              title: 'Strip Comments on Import',
+              title: l10n.settingsStripComments,
               subtitle: settings.stripCommentsOnImport
-                  ? 'Enabled - comments removed from new songs'
-                  : 'Disabled',
+                  ? l10n.settingsStripCommentsEnabled
+                  : l10n.commonDisabled,
               trailing: Switch(
                 value: settings.stripCommentsOnImport,
                 onChanged: (value) {
@@ -223,42 +225,42 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.cleaning_services_rounded,
-              title: 'Strip Comments from Library',
-              subtitle: 'Remove all comment metadata from songs',
+              title: l10n.settingsStripCommentsLibrary,
+              subtitle: l10n.settingsStripCommentsLibrarySubtitle,
               onTap: () => _stripCommentsFromLibrary(context, ref),
             ),
 
             const SizedBox(height: 24),
 
             // Appearance section
-            _buildSectionHeader(context, 'Appearance'),
+            _buildSectionHeader(context, l10n.settingsSectionAppearance),
             _buildSettingsTile(
               context,
               icon: Icons.palette_rounded,
-              title: 'Theme',
-              subtitle: 'Dark (default)',
+              title: l10n.settingsTheme,
+              subtitle: l10n.settingsThemeDark,
               onTap: () => _showThemeInfo(context),
             ),
             _buildSettingsTile(
               context,
               icon: Icons.color_lens_rounded,
-              title: 'Dynamic Colors',
-              subtitle: 'Coming soon - colors adapt to album art',
+              title: l10n.settingsDynamicColors,
+              subtitle: l10n.settingsDynamicColorsSubtitle,
               trailing: Icon(
                 Icons.schedule_rounded,
                 color: AppTheme.textMuted,
               ),
               onTap: () {
-                _showComingSoonInfo(context, 'Dynamic Colors', 'This feature will automatically adapt the app\'s colors based on the currently playing album art.');
+                _showComingSoonInfo(context, l10n.settingsDynamicColors, l10n.settingsDynamicColorsDescription);
               },
             ),
             _buildSettingsTile(
               context,
               icon: Icons.animation_rounded,
-              title: 'Visualizer Animations',
+              title: l10n.settingsVisualizer,
               subtitle: settings.visualizerEnabled
-                  ? 'Enabled (uses more battery)'
-                  : 'Disabled (saves battery)',
+                  ? l10n.settingsVisualizerEnabled
+                  : l10n.settingsVisualizerDisabled,
               trailing: Switch(
                 value: settings.visualizerEnabled,
                 onChanged: (value) {
@@ -274,19 +276,19 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 24),
 
             // About section
-            _buildSectionHeader(context, 'About'),
+            _buildSectionHeader(context, l10n.settingsSectionAbout),
             _buildSettingsTile(
               context,
               icon: Icons.info_rounded,
-              title: 'App Version',
+              title: l10n.settingsAppVersion,
               subtitle: '1.0.0 (Build 1)',
               onTap: () {},
             ),
             _buildSettingsTile(
               context,
               icon: Icons.code_rounded,
-              title: 'Open Source Licenses',
-              subtitle: 'View third-party licenses',
+              title: l10n.settingsLicenses,
+              subtitle: l10n.settingsLicensesSubtitle,
               onTap: () => showLicensePage(
                 context: context,
                 applicationName: 'VibePlay',
@@ -296,8 +298,8 @@ class SettingsScreen extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.restore_rounded,
-              title: 'Reset Settings',
-              subtitle: 'Restore default settings',
+              title: l10n.settingsReset,
+              subtitle: l10n.settingsResetSubtitle,
               onTap: () => _confirmResetSettings(context, ref),
             ),
 
